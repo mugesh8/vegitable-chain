@@ -1,0 +1,1001 @@
+import React, { useState, useEffect } from 'react';
+import { Search, Plus, X } from 'lucide-react';
+import { createCategory, getAllCategories, updateCategory, deleteCategory } from '../../../api/categoryApi';
+import { createProduct, getAllProducts, updateProduct, deleteProduct } from '../../../api/productApi';
+import { BASE_URL } from '../../../config/config';
+
+const AddProduct = () => {
+  const [activeTab, setActiveTab] = useState('product');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [editingIndex, setEditingIndex] = useState(null);
+  const [deletingIndex, setDeletingIndex] = useState(null);
+  const [editFormData, setEditFormData] = useState({});
+  const [loading, setLoading] = useState(false);
+  const [editingPriceId, setEditingPriceId] = useState(null);
+  const [editingPrice, setEditingPrice] = useState('');
+  const [priceHistory, setPriceHistory] = useState([]);
+  const [selectedProduct, setSelectedProduct] = useState(null);
+  const [historyPage, setHistoryPage] = useState(1);
+  const [detailPage, setDetailPage] = useState(1);
+  const itemsPerPage = 10;
+
+  const [categories, setCategories] = useState([]);
+  const [vegetables, setVegetables] = useState([]);
+
+  const getStatusColor = (status) => {
+    return status === 'Active'
+      ? 'bg-[#4ED39A] text-white'
+      : 'bg-yellow-500 text-white';
+  };
+
+  const handleEdit = (index) => {
+    setEditingIndex(index);
+    setEditFormData({ ...vegetables[index] });
+    setShowEditModal(true);
+  };
+
+  const handleEditSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const formData = new FormData(e.target);
+
+      // Handle checkbox for default status in edit
+      const isDefaultChecked = e.target.is_default?.checked || false;
+      formData.set('default_status', isDefaultChecked);
+
+      await updateProduct(vegetables[editingIndex].pid, formData);
+      alert('Product updated successfully!');
+      setShowEditModal(false);
+      fetchProducts();
+    } catch (error) {
+      alert(error.response?.data?.message || 'Failed to update product');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEditChange = (e) => {
+    const { name, value } = e.target;
+    setEditFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handlePriceEdit = (pid, currentPrice) => {
+    setEditingPriceId(pid);
+    setEditingPrice(currentPrice);
+  };
+
+  const handlePriceSave = async (pid) => {
+    try {
+      // Get the old price before updating
+      const oldProduct = vegetables.find(v => v.pid === pid);
+      const oldPrice = oldProduct?.current_price;
+
+      // Store price change in localStorage
+      if (oldPrice && oldPrice !== editingPrice) {
+        const priceChanges = JSON.parse(localStorage.getItem('priceHistory') || '[]');
+        priceChanges.push({
+          pid: pid,
+          productName: oldProduct.product_name,
+          categoryName: oldProduct.categoryName,
+          unit: oldProduct.unit,
+          productImage: oldProduct.product_image,
+          oldPrice: oldPrice,
+          newPrice: editingPrice,
+          updatedAt: new Date().toISOString()
+        });
+        localStorage.setItem('priceHistory', JSON.stringify(priceChanges));
+      }
+
+      const formData = new FormData();
+      formData.append('current_price', editingPrice);
+      await updateProduct(pid, formData);
+      setEditingPriceId(null);
+      setEditingPrice('');
+      fetchProducts();
+
+      // Refresh history if on history tab
+      if (activeTab === 'history') {
+        fetchPriceHistory();
+      }
+    } catch (error) {
+      alert(error.response?.data?.message || 'Failed to update price');
+    }
+  };
+
+  const handlePriceHistory = async (product) => {
+    // Get price changes from localStorage for this product
+    const priceChanges = JSON.parse(localStorage.getItem('priceHistory') || '[]');
+    const productChanges = priceChanges.filter(change => change.pid === product.pid);
+
+    setSelectedProduct({
+      ...product,
+      categoryName: product.categoryName,
+      priceChanges: productChanges
+    });
+    setDetailPage(1);
+  };
+
+  const handlePriceCancel = () => {
+    setEditingPriceId(null);
+    setEditingPrice('');
+  };
+
+  const handleCategoryEdit = (index) => {
+    setEditingIndex(index);
+    setEditFormData({ ...categories[index] });
+    setShowEditModal(true);
+  };
+
+  const handleCategoryEditSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const formData = new FormData(e.target);
+      await updateCategory(categories[editingIndex].cid, formData);
+      alert('Category updated successfully!');
+      setShowEditModal(false);
+      fetchCategories();
+    } catch (error) {
+      alert(error.response?.data?.message || 'Failed to update category');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDelete = (index) => {
+    setDeletingIndex(index);
+    setShowDeleteModal(true);
+  };
+
+  const confirmDelete = async () => {
+    if (activeTab === 'product') {
+      try {
+        await deleteProduct(vegetables[deletingIndex].pid);
+        alert('Product deleted successfully!');
+        setShowDeleteModal(false);
+        setDeletingIndex(null);
+        fetchProducts();
+      } catch (error) {
+        alert(error.response?.data?.message || 'Failed to delete product');
+        setShowDeleteModal(false);
+      }
+    } else {
+      try {
+        await deleteCategory(categories[deletingIndex].cid);
+        alert('Category deleted successfully!');
+        setShowDeleteModal(false);
+        setDeletingIndex(null);
+        fetchCategories();
+      } catch (error) {
+        alert(error.response?.data?.message || 'Failed to delete category');
+        setShowDeleteModal(false);
+      }
+    }
+  };
+
+  const fetchCategories = async () => {
+    try {
+      const response = await getAllCategories(1, 100);
+      setCategories(response.data || []);
+    } catch (error) {
+      console.error('Failed to fetch categories:', error);
+    }
+  };
+
+  const fetchProducts = async () => {
+    try {
+      const response = await getAllProducts(currentPage, 10);
+      const products = response.data || [];
+      const productsWithCategory = products.map(product => {
+        return { ...product, categoryName: product.category?.categoryname || 'N/A' };
+      });
+      setVegetables(productsWithCategory);
+    } catch (error) {
+      console.error('Failed to fetch products:', error);
+    }
+  };
+
+  useEffect(() => {
+    fetchCategories();
+    if (activeTab === 'product') {
+      fetchProducts();
+    } else if (activeTab === 'history') {
+      fetchPriceHistory();
+    }
+  }, [activeTab, currentPage]);
+
+  const fetchPriceHistory = async () => {
+    try {
+      const response = await getAllProducts(1, 1000);
+      const products = response.data || [];
+
+      // Get price changes from localStorage
+      const priceChanges = JSON.parse(localStorage.getItem('priceHistory') || '[]');
+
+      // Group price changes by product ID
+      const changesByProduct = priceChanges.reduce((acc, change) => {
+        if (!acc[change.pid]) {
+          acc[change.pid] = [];
+        }
+        acc[change.pid].push(change);
+        return acc;
+      }, {});
+
+      // Create product list with their price histories
+      const productsWithHistory = products.map(product => ({
+        ...product,
+        categoryName: product.category?.categoryname || 'N/A',
+        priceChanges: changesByProduct[product.pid] || [],
+        lastUpdated: changesByProduct[product.pid]?.[changesByProduct[product.pid].length - 1]?.updatedAt || product.updatedAt
+      }));
+
+      // Sort by last updated (newest first)
+      productsWithHistory.sort((a, b) => new Date(b.lastUpdated) - new Date(a.lastUpdated));
+
+      setPriceHistory(productsWithHistory);
+    } catch (error) {
+      console.error('Failed to fetch price history:', error);
+    }
+  };
+
+  const handleAddSubmit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const formData = new FormData(e.target);
+
+      // Handle checkbox for default status
+      if (activeTab === 'product') {
+        const isDefaultChecked = e.target.is_default.checked;
+        formData.set('default_status', isDefaultChecked);
+      }
+
+      if (activeTab === 'category') {
+        await createCategory(formData);
+        alert('Category created successfully!');
+        fetchCategories();
+      } else {
+        await createProduct(formData);
+        alert('Product created successfully!');
+        fetchProducts();
+      }
+      setShowAddModal(false);
+      e.target.reset();
+    } catch (error) {
+      alert(error.response?.data?.message || `Failed to create ${activeTab}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="p-4 sm:p-6 lg:p-8">
+      <div className="max-w-7xl mx-auto">
+
+        {/* Tabs */}
+        {!selectedProduct && (
+          <div className="flex items-center gap-2 mb-6">
+            <button
+              onClick={() => setActiveTab('product')}
+              className={`px-5 py-2.5 rounded-lg font-medium transition-all text-sm ${activeTab === 'product' ? 'bg-[#0D7C66] text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'}`}
+            >
+              Add Product
+            </button>
+            <button
+              onClick={() => setActiveTab('category')}
+              className={`px-5 py-2.5 rounded-lg font-medium transition-all text-sm ${activeTab === 'category' ? 'bg-[#0D7C66] text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'}`}
+            >
+              Add Category
+            </button>
+          </div>
+        )}
+
+        {/* Header */}
+        {!selectedProduct && (
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 mb-6">
+            {/* Search */}
+            <div className="relative flex-1 max-w-md">
+              <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-[#6B8782]" />
+              <input
+                type="text"
+                placeholder="Search vegetables..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-12 pr-4 py-3 bg-[#F0F4F3] border-none rounded-xl text-[#0D5C4D] placeholder-[#6B8782] focus:outline-none focus:ring-2 focus:ring-[#0D8568] text-sm"
+              />
+            </div>
+
+            {/* Add Button */}
+            <button
+              onClick={() => setShowAddModal(true)}
+              className="px-5 py-2.5 bg-[#0D7C66] hover:bg-[#0a6354] text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2 shadow-sm text-sm whitespace-nowrap"
+            >
+              <Plus className="w-4 h-4" />
+              {activeTab === 'product' ? 'Add Product' : 'Add Category'}
+            </button>
+          </div>
+        )}
+
+        {/* Product Table */}
+        {activeTab === 'product' && !selectedProduct && (
+          <div className="bg-white rounded-2xl overflow-hidden border border-[#D0E0DB]">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-[#D4F4E8]">
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">
+                      Image
+                    </th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">
+                      Vegetable Name
+                    </th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">
+                      Category
+                    </th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">
+                      Unit
+                    </th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">
+                      Market Price (₹/KG)
+                    </th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">
+                      Last Updated
+                    </th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">
+                      Status
+                    </th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">
+                      Action
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {vegetables.map((vegetable, index) => (
+                    <tr key={vegetable.pid} className={`border-b border-[#D0E0DB] hover:bg-[#F0F4F3] transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-[#F0F4F3]/30'}`}>
+                      <td className="px-6 py-4">
+                        {vegetable.product_image ? (
+                          <img src={`${BASE_URL}${vegetable.product_image}`} alt={vegetable.product_name} className="w-12 h-12 rounded-lg object-cover" />
+                        ) : (
+                          <div className="w-12 h-12 bg-gray-200 rounded-lg flex items-center justify-center text-gray-400 text-xs">No Image</div>
+                        )}
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm font-semibold text-[#0D5C4D]">{vegetable.product_name}</div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm text-[#0D5C4D]">{vegetable.categoryName}</div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm text-[#0D5C4D]">{vegetable.unit}</div>
+                      </td>
+                      <td className="px-6 py-4">
+                        {editingPriceId === vegetable.pid ? (
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={editingPrice}
+                              onChange={(e) => setEditingPrice(e.target.value)}
+                              className="w-24 px-2 py-1 border border-[#0D7C66] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm"
+                              autoFocus
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') handlePriceSave(vegetable.pid);
+                                if (e.key === 'Escape') handlePriceCancel();
+                              }}
+                            />
+                            <button
+                              onClick={() => handlePriceSave(vegetable.pid)}
+                              className="px-2 py-1 bg-[#0D7C66] text-white rounded text-xs hover:bg-[#0a6354]"
+                            >
+                              ✓
+                            </button>
+                            <button
+                              onClick={handlePriceCancel}
+                              className="px-2 py-1 bg-gray-300 text-gray-700 rounded text-xs hover:bg-gray-400"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ) : (
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={vegetable.current_price}
+                            onClick={() => handlePriceEdit(vegetable.pid, vegetable.current_price)}
+                            readOnly
+                            className="w-24 px-2 py-1 border border-gray-200 rounded-lg text-sm cursor-pointer hover:border-[#0D7C66] focus:outline-none"
+                            title="Click to edit price"
+                          />
+                        )}
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm font-medium text-gray-500">
+                          {new Date(vegetable.updatedAt).toLocaleDateString()}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1 w-fit ${vegetable.product_status === 'active' ? 'bg-[#4ED39A]' : 'bg-yellow-500'} text-white`}>
+                          <div className="w-2 h-2 rounded-full bg-white"></div>
+                          {vegetable.product_status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleEdit(index)}
+                            className="px-4 py-1.5 border border-gray-300 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-50 transition-colors"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handlePriceHistory(vegetable)}
+                            className="px-4 py-1.5 bg-[#0D7C66] text-white rounded-lg text-xs font-medium hover:bg-[#0a6354] transition-colors"
+                          >
+                            Price History
+                          </button>
+                          <button
+                            onClick={() => handleDelete(index)}
+                            className="px-4 py-1.5 bg-red-100 text-red-700 rounded-lg text-xs font-medium hover:bg-red-200 transition-colors"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination */}
+            <div className="flex items-center justify-between px-6 py-4 bg-[#F0F4F3] border-t border-[#D0E0DB]">
+              <div className="text-sm text-[#6B8782]">
+                Showing {vegetables.length} products
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors">
+                  &lt;
+                </button>
+
+                <button className="px-4 py-2 rounded-lg font-medium bg-[#0D8568] text-white">
+                  1
+                </button>
+
+                <button className="px-4 py-2 rounded-lg font-medium text-[#6B8782] hover:bg-[#D0E0DB]">
+                  2
+                </button>
+
+                <button className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors">
+                  ...
+                </button>
+
+                <button className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors">
+                  &gt;
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Category Table */}
+        {activeTab === 'category' && (
+          <div className="bg-white rounded-2xl overflow-hidden border border-[#D0E0DB]">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="bg-[#D4F4E8]">
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Image</th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Category Name</th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Description</th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Status</th>
+                    <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {categories.map((category, index) => (
+                    <tr key={category.cid} className={`border-b border-[#D0E0DB] hover:bg-[#F0F4F3] transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-[#F0F4F3]/30'}`}>
+                      <td className="px-6 py-4">
+                        {category.category_image ? (
+                          <img src={`${BASE_URL}${category.category_image}`} alt={category.categoryname} className="w-12 h-12 rounded-lg object-cover" />
+                        ) : (
+                          <div className="w-12 h-12 bg-gray-200 rounded-lg flex items-center justify-center text-gray-400 text-xs">No Image</div>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 font-semibold text-[#0D5C4D]">{category.categoryname}</td>
+                      <td className="px-6 py-4 text-sm text-[#0D5C4D]">{category.categorydescription}</td>
+                      <td className="px-6 py-4">
+                        <span className={`px-3 py-1.5 rounded-full text-xs font-medium ${category.category_status === 'active' ? 'bg-[#4ED39A]' : 'bg-yellow-500'} text-white flex items-center gap-1 w-fit`}>
+                          <div className="w-2 h-2 rounded-full bg-white"></div>
+                          {category.category_status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleCategoryEdit(index)}
+                            className="px-4 py-1.5 border border-gray-300 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-50 transition-colors"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleDelete(index)}
+                            className="px-4 py-1.5 bg-red-100 text-red-700 rounded-lg text-xs font-medium hover:bg-red-200 transition-colors"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex items-center justify-between px-6 py-4 bg-[#F0F4F3] border-t border-[#D0E0DB]">
+              <div className="text-sm text-[#6B8782]">Showing {categories.length} categories</div>
+              <div className="flex items-center gap-2">
+                <button className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors">&lt;</button>
+                <button className="px-4 py-2 rounded-lg font-medium bg-[#0D8568] text-white">1</button>
+                <button className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors">&gt;</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Price History View */}
+        {activeTab === 'product' && selectedProduct && (
+          <div className="bg-white rounded-2xl overflow-hidden border border-[#D0E0DB]">
+            <div className="p-6">
+              <button
+                onClick={() => {
+                  setSelectedProduct(null);
+                  setDetailPage(1);
+                }}
+                className="mb-4 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors flex items-center gap-2"
+              >
+                ← Back to Products
+              </button>
+
+              <div className="mb-6">
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="bg-[#D4F4E8]">
+                        <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Image</th>
+                        <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Vegetable Name</th>
+                        <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Category</th>
+                        <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Unit</th>
+                        <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Current Rate (₹/KG)</th>
+                        <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Last Updated</th>
+                        <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr className="border-b border-[#D0E0DB] hover:bg-[#F0F4F3] transition-colors bg-white">
+                        <td className="px-6 py-4">
+                          {selectedProduct.product_image ? (
+                            <img src={`${BASE_URL}${selectedProduct.product_image}`} alt={selectedProduct.product_name} className="w-12 h-12 rounded-lg object-cover" />
+                          ) : (
+                            <div className="w-12 h-12 bg-gray-200 rounded-lg flex items-center justify-center text-gray-400 text-xs">No Image</div>
+                          )}
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="text-sm font-semibold text-[#0D5C4D]">{selectedProduct.product_name}</div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="text-sm text-[#0D5C4D]">{selectedProduct.categoryName}</div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="text-sm text-[#0D5C4D]">{selectedProduct.unit}</div>
+                        </td>
+                        <td className="px-6 py-4">
+                          {editingPriceId === selectedProduct.pid ? (
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={editingPrice}
+                                onChange={(e) => setEditingPrice(e.target.value)}
+                                className="w-24 px-2 py-1 border border-[#0D7C66] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm"
+                                autoFocus
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') handlePriceSave(selectedProduct.pid);
+                                  if (e.key === 'Escape') handlePriceCancel();
+                                }}
+                              />
+                              <button
+                                onClick={() => handlePriceSave(selectedProduct.pid)}
+                                className="px-2 py-1 bg-[#0D7C66] text-white rounded text-xs hover:bg-[#0a6354]"
+                              >
+                                ✓
+                              </button>
+                              <button
+                                onClick={handlePriceCancel}
+                                className="px-2 py-1 bg-gray-300 text-gray-700 rounded text-xs hover:bg-gray-400"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                          ) : (
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={selectedProduct.current_price}
+                              onClick={() => handlePriceEdit(selectedProduct.pid, selectedProduct.current_price)}
+                              readOnly
+                              className="w-24 px-2 py-1 border border-gray-200 rounded-lg text-sm cursor-pointer hover:border-[#0D7C66] focus:outline-none"
+                              title="Click to edit price"
+                            />
+                          )}
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="text-sm font-medium text-gray-500">
+                            {new Date(selectedProduct.updatedAt).toLocaleDateString()}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className={`px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1 w-fit ${selectedProduct.product_status === 'active' ? 'bg-[#4ED39A]' : 'bg-yellow-500'} text-white`}>
+                            <div className="w-2 h-2 rounded-full bg-white"></div>
+                            {selectedProduct.product_status}
+                          </span>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {selectedProduct.priceChanges.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  No price update history for this product
+                </div>
+              ) : (
+                <>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="bg-[#D4F4E8]">
+                          <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Price (₹/{selectedProduct.unit})</th>
+                          <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Date</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedProduct.priceChanges
+                          .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+                          .slice((detailPage - 1) * itemsPerPage, detailPage * itemsPerPage)
+                          .map((change, idx) => {
+                            const date = new Date(change.updatedAt).toLocaleDateString();
+
+                            return (
+                              <tr key={idx} className={`border-b border-[#D0E0DB] hover:bg-[#F0F4F3] transition-colors ${idx % 2 === 0 ? 'bg-white' : 'bg-[#F0F4F3]/30'}`}>
+                                <td className="px-6 py-4">
+                                  <div className="text-sm font-semibold text-[#0D5C4D]">₹{change.newPrice}</div>
+                                </td>
+                                <td className="px-6 py-4">
+                                  <div className="text-sm font-medium text-gray-500">{date}</div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Pagination */}
+                  <div className="flex items-center justify-between px-6 py-4 bg-[#F0F4F3] border-t border-[#D0E0DB]">
+                    <div className="text-sm text-[#6B8782]">
+                      Showing {selectedProduct.priceChanges.length} price updates
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors">
+                        &lt;
+                      </button>
+
+                      <button className="px-4 py-2 rounded-lg font-medium bg-[#0D8568] text-white">
+                        1
+                      </button>
+
+                      <button className="px-4 py-2 rounded-lg font-medium text-[#6B8782] hover:bg-[#D0E0DB]">
+                        2
+                      </button>
+
+                      <button className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors">
+                        ...
+                      </button>
+
+                      <button className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors">
+                        &gt;
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+
+        {/* Add Modal */}
+        {showAddModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 p-4 overflow-y-auto">
+            <div className="bg-white rounded-2xl p-6 max-w-md w-full my-8 max-h-[calc(100vh-4rem)]">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-[#0D5C4D]">{activeTab === 'product' ? 'Add Product' : 'Add Category'}</h3>
+                <button onClick={() => setShowAddModal(false)} className="text-gray-400 hover:text-gray-600">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="overflow-y-auto max-h-[calc(100vh-12rem)] pr-2">
+                <form onSubmit={handleAddSubmit} className="space-y-4">
+                  {activeTab === 'category' ? (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Category Name</label>
+                        <input type="text" name="categoryname" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm" required />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
+                        <textarea name="categorydescription" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm" rows="3"></textarea>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Image</label>
+                        <input type="file" name="category_image" accept="image/*" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
+                        <select name="category_status" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm">
+                          <option value="active">Active</option>
+                          <option value="inactive">Inactive</option>
+                        </select>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Product Name</label>
+                        <input type="text" name="product_name" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm" required />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
+                        <select name="category_id" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm" required>
+                          <option value="">Select Category</option>
+                          {categories.map(cat => (
+                            <option key={cat.cid} value={cat.cid}>{cat.categoryname}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Image</label>
+                        <input type="file" name="product_image" accept="image/*" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Unit</label>
+                        <input type="text" name="unit" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm" required />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Current Price</label>
+                        <input type="number" step="0.01" name="current_price" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm" required />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
+                        <select name="product_status" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm">
+                          <option value="active">Active</option>
+                          <option value="inactive">Inactive</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Default</label>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input type="checkbox" name="is_default" className="sr-only peer" />
+                          <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-[#0D7C66]/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#0D7C66]"></div>
+                        </label>
+                      </div>
+                    </>
+                  )}
+                  <div className="flex gap-3 pt-4 sticky bottom-0 bg-white">
+                    <button type="submit" disabled={loading} className="flex-1 px-6 py-2.5 bg-[#0D7C66] hover:bg-[#0a6354] text-white font-semibold rounded-lg transition-colors disabled:opacity-50">
+                      {loading ? 'Adding...' : 'Add'}
+                    </button>
+                    <button type="button" onClick={() => setShowAddModal(false)} className="flex-1 px-6 py-2.5 border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-colors">Cancel</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Edit Modal */}
+        {showEditModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 p-4 overflow-y-auto">
+            <div className="bg-white rounded-2xl p-6 max-w-md w-full my-8 max-h-[calc(100vh-4rem)]">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-semibold text-[#0D5C4D]">Edit {activeTab === 'product' ? 'Product' : 'Category'}</h3>
+                <button onClick={() => setShowEditModal(false)} className="text-gray-400 hover:text-gray-600">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              <div className="overflow-y-auto max-h-[calc(100vh-12rem)] pr-2">
+                <form onSubmit={activeTab === 'product' ? handleEditSubmit : handleCategoryEditSubmit} className="space-y-4">
+                  {activeTab === 'category' ? (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Category Name</label>
+                        <input
+                          type="text"
+                          name="categoryname"
+                          value={editFormData.categoryname || ''}
+                          onChange={handleEditChange}
+                          className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
+                        <input
+                          type="text"
+                          name="categorydescription"
+                          value={editFormData.categorydescription || ''}
+                          onChange={handleEditChange}
+                          className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Image</label>
+                        <input type="file" name="category_image" accept="image/*" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
+                        <select
+                          name="category_status"
+                          value={editFormData.category_status || 'active'}
+                          onChange={handleEditChange}
+                          className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm"
+                        >
+                          <option value="active">Active</option>
+                          <option value="inactive">Inactive</option>
+                        </select>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Product Name</label>
+                        <input
+                          type="text"
+                          name="product_name"
+                          value={editFormData.product_name || ''}
+                          onChange={handleEditChange}
+                          className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
+                        <select
+                          name="category_id"
+                          value={editFormData.category_id || ''}
+                          onChange={handleEditChange}
+                          className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm"
+                          required
+                        >
+                          <option value="">Select Category</option>
+                          {categories.map(cat => (
+                            <option key={cat.cid} value={cat.cid}>{cat.categoryname}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Image</label>
+                        <input type="file" name="product_image" accept="image/*" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Unit</label>
+                        <input
+                          type="text"
+                          name="unit"
+                          value={editFormData.unit || ''}
+                          onChange={handleEditChange}
+                          className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Current Price</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          name="current_price"
+                          value={editFormData.current_price || ''}
+                          onChange={handleEditChange}
+                          className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
+                        <select
+                          name="product_status"
+                          value={editFormData.product_status || 'active'}
+                          onChange={handleEditChange}
+                          className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm"
+                        >
+                          <option value="active">Active</option>
+                          <option value="inactive">Inactive</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Default</label>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                          <input
+                            type="checkbox"
+                            name="is_default"
+                            checked={editFormData.default_status || false}
+                            onChange={(e) => handleEditChange({ target: { name: 'default_status', value: e.target.checked } })}
+                            className="sr-only peer"
+                          />
+                          <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-[#0D7C66]/20 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#0D7C66]"></div>
+                        </label>
+                      </div>
+                    </>
+                  )}
+                  <div className="flex gap-3 pt-4 sticky bottom-0 bg-white">
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="flex-1 px-6 py-2.5 bg-[#0D7C66] hover:bg-[#0a6354] text-white font-semibold rounded-lg transition-colors disabled:opacity-50"
+                    >
+                      {loading ? 'Saving...' : 'Save Changes'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowEditModal(false)}
+                      className="flex-1 px-6 py-2.5 border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Confirmation Modal */}
+        {showDeleteModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl p-6 max-w-sm w-full">
+              <h3 className="text-lg font-semibold text-[#0D5C4D] mb-3">Confirm Delete</h3>
+              <p className="text-sm text-gray-600 mb-6">
+                Are you sure you want to delete this {activeTab === 'product' ? 'product' : 'category'}? This action cannot be undone.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={confirmDelete}
+                  className="flex-1 px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg transition-colors"
+                >
+                  Delete
+                </button>
+                <button
+                  onClick={() => setShowDeleteModal(false)}
+                  className="flex-1 px-6 py-2.5 border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+export default AddProduct;
