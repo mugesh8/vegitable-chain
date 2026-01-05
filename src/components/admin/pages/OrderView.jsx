@@ -119,23 +119,23 @@ const OrderView = () => {
             // Format draft data
             return {
                 id: order.did,
-                customer_name: order.customer_name || 'N/A',
-                customer_id: order.customer_id || 'N/A',
-                phone_number: order.phone_number || 'N/A',
+                customer_name: order.customer_name || '-',
+                customer_id: order.customer_id || '-',
+                phone_number: order.phone_number || '-',
                 order_status: 'Draft',
-                priority: 'N/A',
+                priority: '-',
                 createdAt: order.createdAt,
                 updatedAt: order.updatedAt,
-                delivery_address: order.delivery_address || 'N/A',
-                needed_by_date: 'N/A',
-                preferred_time: 'N/A',
+                delivery_address: order.delivery_address || '-',
+                needed_by_date: '-',
+                preferred_time: '-',
                 items: order.draft_data?.products?.map((product, index) => ({
-                    product: product.productName || 'N/A',
-                    num_boxes: product.numBoxes || 'N/A',
-                    packing_type: product.packingType || 'N/A',
-                    net_weight: product.netWeight || 'N/A',
-                    gross_weight: product.grossWeight || 'N/A',
-                    box_weight: product.boxWeight || 'N/A',
+                    product: product.productName || '-',
+                    num_boxes: product.numBoxes || '-',
+                    packing_type: product.packingType || '-',
+                    net_weight: product.netWeight || '-',
+                    gross_weight: product.grossWeight || '-',
+                    box_weight: product.boxWeight || '-',
                     market_price: product.marketPrice || '0.00',
                     total_price: product.totalAmount || '0.00'
                 })) || []
@@ -180,7 +180,6 @@ const OrderView = () => {
             { Field: 'Order ID', Value: isDraft ? formattedData.id : formattedData.oid },
             { Field: 'Customer Name', Value: formattedData.customer_name },
             { Field: 'Customer ID', Value: formattedData.customer_id },
-            { Field: 'Phone Number', Value: formattedData.phone_number || 'N/A' },
             { Field: 'Order Status', Value: formattedData.order_status },
             {
                 Field: 'Created Date', Value: formattedData.createdAt
@@ -189,39 +188,34 @@ const OrderView = () => {
                         month: 'short',
                         day: '2-digit'
                     })
-                    : 'N/A'
+                    : '-'
             },
-            { Field: 'Delivery Address', Value: formattedData.delivery_address },
             { Field: '', Value: '' }, // Empty row for spacing
         ];
 
         // Prepare products data
         const productsData = formattedData.items.map((item, index) => {
             // Get product name - handle both 'product' and 'product_name' fields
-            const productName = item.product_name || item.product || 'N/A';
+            const productName = item.product_name || item.product || '-';
 
             return {
                 'PRODUCT': productName,
+                'TYPE OF PACKING': item.packing_type || '-',
                 'NO OF BOXES/BAGS': item.num_boxes || 0,
-                'TYPE OF PACKING': item.packing_type || 'N/A',
                 'BOX WEIGHT (KG)': parseFloat(item.box_weight || 0).toFixed(2),
                 'NET WEIGHT (KG)': parseFloat(item.net_weight || 0).toFixed(2),
-                'GROSS WEIGHT (KG)': parseFloat(item.gross_weight || 0).toFixed(2),
-                'MARKET PRICE (₹)': parseFloat(item.market_price || 0).toFixed(2),
-                'TOTAL AMOUNT (₹)': parseFloat(item.total_price || 0).toFixed(2)
+                'GROSS WEIGHT (KG)': parseFloat(item.gross_weight || 0).toFixed(2)
             };
         });
 
         // Add totals row
         productsData.push({
             'PRODUCT': 'Total',
-            'NO OF BOXES/BAGS': '',
             'TYPE OF PACKING': '',
+            'NO OF BOXES/BAGS': '',
             'BOX WEIGHT (KG)': '',
             'NET WEIGHT (KG)': `${totals.totalNetWeight.toFixed(2)} kg`,
-            'GROSS WEIGHT (KG)': `${totals.totalGrossWeight.toFixed(2)} kg`,
-            'MARKET PRICE (₹)': '',
-            'TOTAL AMOUNT (₹)': `₹${totals.totalAmount.toFixed(2)}`
+            'GROSS WEIGHT (KG)': `${totals.totalGrossWeight.toFixed(2)} kg`
         });
 
         // Prepare packing summary data
@@ -271,13 +265,11 @@ const OrderView = () => {
         const productsSheet = XLSX.utils.json_to_sheet(productsData);
         productsSheet['!cols'] = [
             { wch: 25 }, // Product
-            { wch: 20 }, // No of Boxes/Bags
             { wch: 20 }, // Type of Packing
+            { wch: 20 }, // No of Boxes/Bags
             { wch: 18 }, // Box Weight
             { wch: 18 }, // Net Weight
-            { wch: 20 }, // Gross Weight
-            { wch: 18 }, // Market Price
-            { wch: 20 }  // Total Amount
+            { wch: 20 }  // Gross Weight
         ];
         XLSX.utils.book_append_sheet(workbook, productsSheet, 'Products');
 
@@ -365,10 +357,7 @@ const OrderView = () => {
                             <p className="text-sm text-gray-500 mb-1">Customer ID</p>
                             <p className="font-semibold text-gray-900">{formattedData.customer_id}</p>
                         </div>
-                        <div>
-                            <p className="text-sm text-gray-500 mb-1">Phone Number</p>
-                            <p className="font-semibold text-gray-900">{formattedData.phone_number || 'N/A'}</p>
-                        </div>
+
                         <div>
                             <p className="text-sm text-gray-500 mb-1">{isDraft ? 'Status' : 'Order Status'}</p>
                             <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800">
@@ -384,36 +373,13 @@ const OrderView = () => {
                                         month: 'short',
                                         day: '2-digit'
                                     })
-                                    : 'N/A'}
+                                    : '-'}
                             </p>
                         </div>
                     </div>
                 </div>
 
-                {/* Delivery Details Card */}
-                <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
-                    <h2 className="text-lg font-bold text-gray-900 mb-4">Delivery Details</h2>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div>
-                            <p className="text-sm text-gray-500 mb-1">Delivery Address</p>
-                            <p className="font-medium text-gray-900">{formattedData.delivery_address}</p   >
-                        </div>
-                        {/* {!isDraft && (
-                            <>
-                                <div>
-                                    <p className="text-sm text-gray-500 mb-1">Needed By Date</p>
-                                    <p className="font-medium text-gray-900">
-                                        {formattedData.needed_by_date !== 'N/A' ? new Date(formattedData.needed_by_date).toLocaleDateString() : 'N/A'}
-                                    </p>
-                                </div>
-                                <div>
-                                    <p className="text-sm text-gray-500 mb-1">Preferred Time</p>
-                                    <p className="font-medium text-gray-900">{formattedData.preferred_time}</p>
-                                </div>
-                            </>
-                        )} */}
-                    </div>
-                </div>
+
 
                 {/* Products Table */}
                 <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
@@ -426,10 +392,10 @@ const OrderView = () => {
                                         Product
                                     </th>
                                     <th className="px-4 py-3 text-left text-xs font-bold text-gray uppercase tracking-wider">
-                                        No of Boxes/Bags
+                                        Type of Packing
                                     </th>
                                     <th className="px-4 py-3 text-left text-xs font-bold text-gray uppercase tracking-wider">
-                                        Type of Packing
+                                        No of Boxes/Bags
                                     </th>
                                     <th className="px-4 py-3 text-left text-xs font-bold text-gray uppercase tracking-wider">
                                         Box Weight (kg)
@@ -440,12 +406,6 @@ const OrderView = () => {
                                     <th className="px-4 py-3 text-left text-xs font-bold text-gray uppercase tracking-wider">
                                         Gross Weight (kg)
                                     </th>
-                                    <th className="px-4 py-3 text-left text-xs font-bold text-gray uppercase tracking-wider">
-                                        Market Price (₹)
-                                    </th>
-                                    <th className="px-4 py-3 text-left text-xs font-bold text-gray uppercase tracking-wider">
-                                        Total Amount (₹)
-                                    </th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -454,13 +414,11 @@ const OrderView = () => {
                                         <td className="px-4 py-3">
                                             <div className="font-medium text-gray-900">{item.product}</div>
                                         </td>
-                                        <td className="px-4 py-3 text-gray-700">{item.num_boxes}</td>
                                         <td className="px-4 py-3 text-gray-700">{item.packing_type}</td>
+                                        <td className="px-4 py-3 text-gray-700">{item.num_boxes}</td>
                                         <td className="px-4 py-3 text-gray-700">{item.box_weight}</td>
                                         <td className="px-4 py-3 text-gray-700">{item.net_weight}</td>
                                         <td className="px-4 py-3 text-gray-700">{item.gross_weight}</td>
-                                        <td className="px-4 py-3 text-gray-700">₹{parseFloat(item.market_price).toFixed(2)}</td>
-                                        <td className="px-4 py-3 text-gray-700">₹{parseFloat(item.total_price).toFixed(2)}</td>
                                     </tr>
                                 ))}
                             </tbody>
@@ -472,8 +430,6 @@ const OrderView = () => {
                                     <td className="px-4 py-3 text-gray-900"></td>
                                     <td className="px-4 py-3 text-gray-900">{totals.totalNetWeight.toFixed(2)} kg</td>
                                     <td className="px-4 py-3 text-gray-900">{totals.totalGrossWeight.toFixed(2)} kg</td>
-                                    <td className="px-4 py-3 text-gray-900"></td>
-                                    <td className="px-4 py-3 text-gray-900">₹{totals.totalAmount.toFixed(2)}</td>
                                 </tr>
                             </tfoot>
                         </table>

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Search, Plus, X } from 'lucide-react';
 import { createCategory, getAllCategories, updateCategory, deleteCategory } from '../../../api/categoryApi';
 import { createProduct, getAllProducts, updateProduct, deleteProduct } from '../../../api/productApi';
+import { getBoxesAndBags } from '../../../api/inventoryApi';
 import { BASE_URL } from '../../../config/config';
 
 const AddProduct = () => {
@@ -25,6 +26,9 @@ const AddProduct = () => {
 
   const [categories, setCategories] = useState([]);
   const [vegetables, setVegetables] = useState([]);
+  const [packingOptions, setPackingOptions] = useState([]);
+  const [selectedPackings, setSelectedPackings] = useState([]);
+  const [editSelectedPackings, setEditSelectedPackings] = useState([]);
 
   const getStatusColor = (status) => {
     return status === 'Active'
@@ -35,6 +39,8 @@ const AddProduct = () => {
   const handleEdit = (index) => {
     setEditingIndex(index);
     setEditFormData({ ...vegetables[index] });
+    const packingType = vegetables[index].packing_type;
+    setEditSelectedPackings(packingType ? packingType.split(',').map(p => p.trim()) : []);
     setShowEditModal(true);
   };
 
@@ -47,6 +53,7 @@ const AddProduct = () => {
       // Handle checkbox for default status in edit
       const isDefaultChecked = e.target.is_default?.checked || false;
       formData.set('default_status', isDefaultChecked);
+      formData.set('packing_type', editSelectedPackings.join(', '));
 
       await updateProduct(vegetables[editingIndex].pid, formData);
       alert('Product updated successfully!');
@@ -202,12 +209,26 @@ const AddProduct = () => {
 
   useEffect(() => {
     fetchCategories();
+    fetchPackingOptions();
     if (activeTab === 'product') {
       fetchProducts();
     } else if (activeTab === 'history') {
       fetchPriceHistory();
     }
   }, [activeTab, currentPage]);
+
+  const fetchPackingOptions = async () => {
+    try {
+      const items = await getBoxesAndBags();
+      const formattedItems = items.map(item => ({
+        id: item.id,
+        name: item.name
+      }));
+      setPackingOptions(formattedItems);
+    } catch (error) {
+      console.error('Failed to fetch packing options:', error);
+    }
+  };
 
   const fetchPriceHistory = async () => {
     try {
@@ -253,6 +274,7 @@ const AddProduct = () => {
       if (activeTab === 'product') {
         const isDefaultChecked = e.target.is_default.checked;
         formData.set('default_status', isDefaultChecked);
+        formData.set('packing_type', selectedPackings.join(', '));
       }
 
       if (activeTab === 'category') {
@@ -266,6 +288,7 @@ const AddProduct = () => {
       }
       setShowAddModal(false);
       e.target.reset();
+      setSelectedPackings([]);
     } catch (error) {
       alert(error.response?.data?.message || `Failed to create ${activeTab}`);
     } finally {
@@ -777,7 +800,13 @@ const AddProduct = () => {
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Unit</label>
-                        <input type="text" name="unit" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm" required />
+                        <input
+                          type="text"
+                          name="unit"
+                          defaultValue="kg"
+                          className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm"
+                          required
+                        />
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Current Price</label>
@@ -789,6 +818,28 @@ const AddProduct = () => {
                           <option value="active">Active</option>
                           <option value="inactive">Inactive</option>
                         </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Type of Packing</label>
+                        <div className="border border-gray-200 rounded-lg p-2 max-h-40 overflow-y-auto">
+                          {packingOptions.map((item) => (
+                            <label key={item.id} className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={selectedPackings.includes(item.name)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedPackings([...selectedPackings, item.name]);
+                                  } else {
+                                    setSelectedPackings(selectedPackings.filter(p => p !== item.name));
+                                  }
+                                }}
+                                className="w-4 h-4 text-[#0D7C66] border-gray-300 rounded focus:ring-[#0D7C66]"
+                              />
+                              <span className="text-sm text-gray-700">{item.name}</span>
+                            </label>
+                          ))}
+                        </div>
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Default</label>
@@ -901,7 +952,7 @@ const AddProduct = () => {
                         <input
                           type="text"
                           name="unit"
-                          value={editFormData.unit || ''}
+                          value={editFormData.unit || 'kg'}
                           onChange={handleEditChange}
                           className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm"
                           required
@@ -930,6 +981,28 @@ const AddProduct = () => {
                           <option value="active">Active</option>
                           <option value="inactive">Inactive</option>
                         </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Type of Packing</label>
+                        <div className="border border-gray-200 rounded-lg p-2 max-h-40 overflow-y-auto">
+                          {packingOptions.map((item) => (
+                            <label key={item.id} className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={editSelectedPackings.includes(item.name)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setEditSelectedPackings([...editSelectedPackings, item.name]);
+                                  } else {
+                                    setEditSelectedPackings(editSelectedPackings.filter(p => p !== item.name));
+                                  }
+                                }}
+                                className="w-4 h-4 text-[#0D7C66] border-gray-300 rounded focus:ring-[#0D7C66]"
+                              />
+                              <span className="text-sm text-gray-700">{item.name}</span>
+                            </label>
+                          ))}
+                        </div>
                       </div>
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Default</label>

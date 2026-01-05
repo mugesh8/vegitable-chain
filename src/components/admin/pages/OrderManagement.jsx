@@ -10,15 +10,12 @@ const OrderManagement = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [timeFilter, setTimeFilter] = useState('All Time');
   const [statusFilter, setStatusFilter] = useState('All Status');
-  const [productFilter, setProductFilter] = useState('Product Type');
   const [showTimeFilter, setShowTimeFilter] = useState(false);
   const [showStatusFilter, setShowStatusFilter] = useState(false);
-  const [showProductFilter, setShowProductFilter] = useState(false);
 
   // Filter options
   const timeFilterOptions = ['All Time', 'Today', 'Yesterday', 'Last 7 Days', 'Last 30 Days', 'This Month', 'Last Month'];
   const statusFilterOptions = ['All Status', 'Pending', 'Confirmed', 'Processing', 'Shipped', 'Delivered', 'Cancelled'];
-  const productFilterOptions = ['Product Type', 'Tomato', 'Potato', 'Onion', 'Carrot', 'Cabbage', 'Capsicum'];
   const [orders, setOrders] = useState([]); // State for orders
   const [drafts, setDrafts] = useState([]); // State for drafts
   const [filteredOrders, setFilteredOrders] = useState([]); // State for filtered orders
@@ -49,11 +46,14 @@ const OrderManagement = () => {
             orderId: order.order_id,
             orderReceivedDate: order.order_received_date,
             customer: order.customer_name,
-            boxes: order.items[0]?.num_boxes || 'N/A',
+            boxes: order.items.reduce((sum, item) => {
+              const numBoxes = parseInt(item.num_boxes) || 0;
+              return sum + numBoxes;
+            }, 0),
             packing: order.items.map(item => item.packing_type).filter(Boolean)[0] || 'N/A',
             netWeight: order.items.reduce((sum, item) => sum + (parseFloat(item.net_weight) || 0), 0) + ' kg',
             grossWeight: order.items.reduce((sum, item) => sum + (parseFloat(item.gross_weight) || 0), 0) + ' kg',
-            total: '₹' + order.items.reduce((sum, item) => sum + (parseFloat(item.total_price) || 0), 0).toLocaleString(),
+
             status: order.order_status || 'pending',
             products: order.items.map(item => item.product).filter(Boolean),
             createdAt: order.createdAt,
@@ -161,7 +161,8 @@ const OrderManagement = () => {
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(order =>
-        order.id.toLowerCase().includes(query) ||
+        String(order.id).toLowerCase().includes(query) ||
+        String(order.orderId || '').toLowerCase().includes(query) ||
         order.customer.toLowerCase().includes(query)
       );
     }
@@ -174,12 +175,7 @@ const OrderManagement = () => {
       );
     }
 
-    // Apply product filter
-    if (productFilter !== 'Product Type') {
-      filtered = filtered.filter(order =>
-        order.products && order.products.includes(productFilter)
-      );
-    }
+
 
     setFilteredOrders(filtered);
 
@@ -190,20 +186,15 @@ const OrderManagement = () => {
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       filteredDraftData = filteredDraftData.filter(draft =>
-        draft.id.toLowerCase().includes(query) ||
+        String(draft.id).toLowerCase().includes(query) ||
         draft.customer.toLowerCase().includes(query)
       );
     }
 
-    // Apply product filter to drafts
-    if (productFilter !== 'Product Type') {
-      filteredDraftData = filteredDraftData.filter(draft =>
-        draft.products && draft.products.includes(productFilter)
-      );
-    }
+
 
     setFilteredDrafts(filteredDraftData);
-  }, [orders, drafts, searchQuery, statusFilter, productFilter]);
+  }, [orders, drafts, searchQuery, statusFilter, timeFilter]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -212,22 +203,20 @@ const OrderManagement = () => {
       }
 
       // Close filter dropdowns when clicking outside
-      if (showTimeFilter || showStatusFilter || showProductFilter) {
+      if (showTimeFilter || showStatusFilter) {
         const timeFilterButton = event.target.closest('[data-filter="time"]');
         const statusFilterButton = event.target.closest('[data-filter="status"]');
-        const productFilterButton = event.target.closest('[data-filter="product"]');
 
-        if (!timeFilterButton && !statusFilterButton && !productFilterButton) {
+        if (!timeFilterButton && !statusFilterButton) {
           setShowTimeFilter(false);
           setShowStatusFilter(false);
-          setShowProductFilter(false);
         }
       }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showTimeFilter, showStatusFilter, showProductFilter]);
+  }, [showTimeFilter, showStatusFilter]);
 
   const toggleDropdown = (orderId, event) => {
     if (openDropdown === orderId) {
@@ -253,11 +242,14 @@ const OrderManagement = () => {
           orderId: order.order_id,
           orderReceivedDate: order.order_received_date,
           customer: order.customer_name,
-          boxes: order.items[0]?.num_boxes || 'N/A',
+          boxes: order.items.reduce((sum, item) => {
+            const numBoxes = parseInt(item.num_boxes) || 0;
+            return sum + numBoxes;
+          }, 0),
           packing: order.items.map(item => item.packing_type).filter(Boolean)[0] || 'N/A',
           netWeight: order.items.reduce((sum, item) => sum + (parseFloat(item.net_weight) || 0), 0) + ' kg',
           grossWeight: order.items.reduce((sum, item) => sum + (parseFloat(item.gross_weight) || 0), 0) + ' kg',
-          total: '₹' + order.items.reduce((sum, item) => sum + (parseFloat(item.total_price) || 0), 0).toLocaleString(),
+
           status: order.order_status || 'pending',
           products: order.items.map(item => item.product).filter(Boolean),
           createdAt: order.createdAt,
@@ -485,38 +477,7 @@ const OrderManagement = () => {
               )}
             </div>
 
-            {/* Product Filter Dropdown */}
-            <div className="relative">
-              <button
-                data-filter="product"
-                onClick={() => {
-                  setShowProductFilter(!showProductFilter);
-                  setShowTimeFilter(false);
-                  setShowStatusFilter(false);
-                }}
-                className="flex items-center gap-2 px-4 py-2.5 border border-gray-300 rounded-lg bg-white hover:bg-gray-50 transition-colors duration-200"
-              >
-                <span className="text-gray-700">{productFilter}</span>
-                <ChevronDown className="w-4 h-4 text-gray-500" />
-              </button>
 
-              {showProductFilter && (
-                <div className="absolute top-full left-0 mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
-                  {productFilterOptions.map((option) => (
-                    <button
-                      key={option}
-                      onClick={() => {
-                        setProductFilter(option);
-                        setShowProductFilter(false);
-                      }}
-                      className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 first:rounded-t-lg last:rounded-b-lg"
-                    >
-                      {option}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
 
             <button className="px-6 py-2.5 border border-[#0D7C66] text-[#0D7C66] rounded-lg hover:bg-[#0D7C66] hover:text-white transition-colors duration-200 font-medium">
               Export
@@ -568,9 +529,7 @@ const OrderManagement = () => {
                   <th className="px-6 py-4 text-left text-xs font-semibold text-[#0D7C66] uppercase tracking-wider">
                     Gross Weight
                   </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-[#0D7C66] uppercase tracking-wider">
-                    Total
-                  </th>
+
                   <th className="px-6 py-4 text-left text-xs font-semibold text-[#0D7C66] uppercase tracking-wider">
                     Action
                   </th>
@@ -611,9 +570,7 @@ const OrderManagement = () => {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                         {order.grossWeight}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                        {order.total}
-                      </td>
+
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                         <button
                           onClick={(e) => {
@@ -678,8 +635,8 @@ const OrderManagement = () => {
                         <button
                           key={page}
                           className={`px-3 py-1.5 rounded-lg font-medium transition-colors duration-150 ${currentPage === page
-                              ? 'bg-[#0D7C66] text-white'
-                              : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
+                            ? 'bg-[#0D7C66] text-white'
+                            : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
                             }`}
                           onClick={() => setCurrentPage(page)}
                         >
@@ -728,9 +685,7 @@ const OrderManagement = () => {
                   <th className="px-6 py-4 text-left text-xs font-semibold text-[#0D7C66] uppercase tracking-wider">
                     Gross Weight
                   </th>
-                  <th className="px-6 py-4 text-left text-xs font-semibold text-[#0D7C66] uppercase tracking-wider">
-                    Total
-                  </th>
+
                   <th className="px-6 py-4 text-left text-xs font-semibold text-[#0D7C66] uppercase tracking-wider">
                     Action
                   </th>
@@ -761,9 +716,7 @@ const OrderManagement = () => {
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                         {draft.grossWeight}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
-                        {draft.total}
-                      </td>
+
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                         <button
                           onClick={(e) => {
@@ -779,7 +732,7 @@ const OrderManagement = () => {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="8" className="px-6 py-4 text-center text-sm text-gray-500">
+                    <td colSpan="7" className="px-6 py-4 text-center text-sm text-gray-500">
                       No drafts found
                     </td>
                   </tr>

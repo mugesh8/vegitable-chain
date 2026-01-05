@@ -279,7 +279,8 @@ const OrderAssignCreateStage2 = () => {
                     individualLabourDataMap[individualKey] = {
                       status: assignment.status || 'pending',
                       startTime: assignment.startTime || '',
-                      endTime: assignment.endTime || ''
+                      endTime: assignment.endTime || '',
+                      packedBoxes: assignment.packedBoxes || 0
                     };
                   });
                 });
@@ -313,7 +314,7 @@ const OrderAssignCreateStage2 = () => {
                     if (row.isFirstVendor) {
                       row.labour = stage2DataRow.labours || [];
                       row.tapeColor = stage2DataRow.tapeColor || '';
-                      
+
                       // Load tape quantity from stage2_data
                       if (stage2Data && stage2Data.productAssignments) {
                         const productAssignment = stage2Data.productAssignments.find(pa => pa.id === row.oiid);
@@ -321,7 +322,7 @@ const OrderAssignCreateStage2 = () => {
                           row.tapeQuantity = productAssignment.tapeQuantity || '';
                         }
                       }
-                      
+
                       // Load individual labour data for each labour assigned to this row
                       if (row.labour && Array.isArray(row.labour)) {
                         row.labour.forEach(labourName => {
@@ -332,6 +333,7 @@ const OrderAssignCreateStage2 = () => {
                             row[`status_${rowKey}`] = individualData.status;
                             row[`startTime_${rowKey}`] = individualData.startTime;
                             row[`endTime_${rowKey}`] = individualData.endTime;
+                            row[`packedBoxes_${rowKey}`] = individualData.packedBoxes || 0;
                           }
                         });
                       }
@@ -367,7 +369,7 @@ const OrderAssignCreateStage2 = () => {
       // Prepare product assignments for backend
       const productAssignments = productRows.map(row => {
         const firstVendorRow = productRows.find(r => r.oiid === row.oiid && r.isFirstVendor);
-        
+
         // Collect individual labour data for this row
         const labourData = {};
         if (row.labour && Array.isArray(row.labour)) {
@@ -380,7 +382,7 @@ const OrderAssignCreateStage2 = () => {
             };
           });
         }
-        
+
         return {
           id: row.oiid,
           product: row.product,
@@ -413,16 +415,17 @@ const OrderAssignCreateStage2 = () => {
             if (!groupedByLabour[labourName]) {
               groupedByLabour[labourName] = [];
             }
-            
+
             // Create a copy of the row with individual labour data
             const key = `${row.id}-${labourName}`;
             const rowWithLabourData = {
               ...row,
               individualStatus: row[`status_${key}`] || 'pending',
               individualStartTime: row[`startTime_${key}`] || '',
-              individualEndTime: row[`endTime_${key}`] || ''
+              individualEndTime: row[`endTime_${key}`] || '',
+              individualPackedBoxes: row[`packedBoxes_${key}`] || 0
             };
-            
+
             groupedByLabour[labourName].push(rowWithLabourData);
           });
         }
@@ -453,6 +456,7 @@ const OrderAssignCreateStage2 = () => {
             status: r.individualStatus || 'pending',
             startTime: r.individualStartTime || '',
             endTime: r.individualEndTime || '',
+            packedBoxes: parseInt(r.individualPackedBoxes) || 0,
             oiid: r.oiid
           }))
         };
@@ -780,16 +784,77 @@ const OrderAssignCreateStage2 = () => {
                     <td className="px-4 py-4">
                       <div>
                         {row.labour && row.labour.length > 0 ? (
-                          <div className="flex flex-wrap gap-1">
+                          <div className="flex flex-wrap gap-1 mb-2">
                             {row.labour.map((lab, idx) => (
-                              <span key={idx} className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded text-xs">
+                              <span key={idx} className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded text-xs flex items-center gap-1">
                                 {lab}
+                                <button
+                                  onClick={() => {
+                                    const updatedRows = [...productRows];
+                                    updatedRows[index].labour = row.labour.filter((_, i) => i !== idx);
+                                    setProductRows(updatedRows);
+                                  }}
+                                  className="text-emerald-700 hover:text-emerald-900 font-bold"
+                                >
+                                  ×
+                                </button>
                               </span>
                             ))}
                           </div>
                         ) : (
-                          <span className="text-sm text-gray-400">No labours assigned</span>
+                          <div className="text-sm text-gray-400 mb-2">No labours assigned</div>
                         )}
+
+                        {/* Present Labours Dropdown */}
+                        <div className="relative labour-dropdown">
+                          <button
+                            onClick={() => setOpenDropdown(openDropdown === index ? null : index)}
+                            className="px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded text-xs font-medium flex items-center gap-1"
+                          >
+                            <User className="w-3 h-3" />
+                            Add Labours
+                            <ChevronDown className="w-3 h-3" />
+                          </button>
+
+                          {openDropdown === index && (
+                            <div className="absolute z-50 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+                              {labours.length > 0 ? (
+                                labours.map((labour) => {
+                                  const labourName = labour.full_name || labour.labour_name || labour.name;
+                                  const isSelected = row.labour && row.labour.includes(labourName);
+
+                                  return (
+                                    <button
+                                      key={labour.lid || labour.labour_id}
+                                      onClick={() => {
+                                        const updatedRows = [...productRows];
+                                        if (isSelected) {
+                                          // Remove labour
+                                          updatedRows[index].labour = row.labour.filter(l => l !== labourName);
+                                        } else {
+                                          // Add labour
+                                          updatedRows[index].labour = [...(row.labour || []), labourName];
+                                        }
+                                        setProductRows(updatedRows);
+                                      }}
+                                      className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center justify-between ${isSelected ? 'bg-emerald-50 text-emerald-700' : 'text-gray-700'
+                                        }`}
+                                    >
+                                      <span>{labourName}</span>
+                                      {isSelected && (
+                                        <Check className="w-4 h-4 text-emerald-600" />
+                                      )}
+                                    </button>
+                                  );
+                                })
+                              ) : (
+                                <div className="px-3 py-2 text-sm text-gray-500">
+                                  No present labours today
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </td>
                   </tr>
@@ -1093,9 +1158,10 @@ const OrderAssignCreateStage2 = () => {
                             <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase">Revised Picked</th>
                             <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase">Packed Amount</th>
                             <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase">Reuse</th>
-                            <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase">Status</th>
                             <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase">Start Time</th>
                             <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase">End Time</th>
+                            <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase">Packed Boxes</th>
+                            <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase">Status</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-200">
@@ -1138,24 +1204,6 @@ const OrderAssignCreateStage2 = () => {
                               <td className="px-4 py-3">
                                 <span className="text-sm text-gray-900">{row.reuse || 0} kg</span>
                               </td>
-                              <td>
-                                <select
-                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
-                                  value={row[`status_${row.id}-${labourName}`] || 'pending'}
-                                  onChange={(e) => {
-                                    const updatedRows = [...productRows];
-                                    const rowIndex = productRows.findIndex(r => r.id === row.id);
-                                    if (rowIndex !== -1) {
-                                      updatedRows[rowIndex][`status_${row.id}-${labourName}`] = e.target.value;
-                                      setProductRows(updatedRows);
-                                    }
-                                  }}
-                                >
-                                  <option value="pending">Pending</option>
-                                  <option value="packing">Packing in Process</option>
-                                  <option value="completed">Completed</option>
-                                </select>
-                              </td>
                               <td className="px-4 py-3">
                                 <input
                                   type="time"
@@ -1185,6 +1233,40 @@ const OrderAssignCreateStage2 = () => {
                                   }}
                                   className="w-32 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
                                 />
+                              </td>
+                              <td className="px-4 py-3">
+                                <input
+                                  type="number"
+                                  value={row[`packedBoxes_${row.id}-${labourName}`] || ''}
+                                  placeholder="Enter boxes"
+                                  onChange={(e) => {
+                                    const updatedRows = [...productRows];
+                                    const rowIndex = productRows.findIndex(r => r.id === row.id);
+                                    if (rowIndex !== -1) {
+                                      updatedRows[rowIndex][`packedBoxes_${row.id}-${labourName}`] = e.target.value;
+                                      setProductRows(updatedRows);
+                                    }
+                                  }}
+                                  className="w-24 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                                />
+                              </td>
+                              <td>
+                                <select
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                                  value={row[`status_${row.id}-${labourName}`] || 'pending'}
+                                  onChange={(e) => {
+                                    const updatedRows = [...productRows];
+                                    const rowIndex = productRows.findIndex(r => r.id === row.id);
+                                    if (rowIndex !== -1) {
+                                      updatedRows[rowIndex][`status_${row.id}-${labourName}`] = e.target.value;
+                                      setProductRows(updatedRows);
+                                    }
+                                  }}
+                                >
+                                  <option value="pending">Pending</option>
+                                  <option value="packing">Packing in Process</option>
+                                  <option value="completed">Completed</option>
+                                </select>
                               </td>
                             </tr>
                           ))}
@@ -1291,6 +1373,23 @@ const OrderAssignCreateStage2 = () => {
                                 <option value="packing">Packing in Process</option>
                                 <option value="completed">Completed</option>
                               </select>
+                            </div>
+                            <div className="pt-2">
+                              <label className="block text-xs font-semibold text-gray-700 mb-1">Packed Boxes</label>
+                              <input
+                                type="number"
+                                value={row[`packedBoxes_${row.id}-${labourName}`] || ''}
+                                placeholder="Enter boxes"
+                                onChange={(e) => {
+                                  const updatedRows = [...productRows];
+                                  const rowIndex = productRows.findIndex(r => r.id === row.id);
+                                  if (rowIndex !== -1) {
+                                    updatedRows[rowIndex][`packedBoxes_${row.id}-${labourName}`] = e.target.value;
+                                    setProductRows(updatedRows);
+                                  }
+                                }}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                              />
                             </div>
                             <div className="pt-2">
                               <label className="block text-xs font-semibold text-gray-700 mb-1">Start Time</label>
