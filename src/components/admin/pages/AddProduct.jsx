@@ -43,7 +43,7 @@ const AddProduct = () => {
     setEditFormData({ ...vegetables[index] });
     const packingType = vegetables[index].packing_type;
     setEditSelectedPackings(packingType ? packingType.split(',').map(p => p.trim()) : []);
-    
+
     // Ensure categories are loaded before opening modal
     if (categories.length === 0) {
       fetchAllCategories().then(() => {
@@ -213,15 +213,15 @@ const AddProduct = () => {
     try {
       const response = await getAllCategories(1, 100);
       let allCategories = response.data || [];
-      
+
       // Filter categories based on search query
       if (searchQuery.trim() && activeTab === 'category') {
-        allCategories = allCategories.filter(category => 
+        allCategories = allCategories.filter(category =>
           category.categoryname.toLowerCase().includes(searchQuery.toLowerCase()) ||
           category.categorydescription?.toLowerCase().includes(searchQuery.toLowerCase())
         );
       }
-      
+
       setCategories(allCategories);
     } catch (error) {
       console.error('Failed to fetch categories:', error);
@@ -233,27 +233,27 @@ const AddProduct = () => {
       // First, try to get all products to know the total count
       const allProductsResponse = await getAllProducts(1, 1000); // Get a large number to get all
       const allProducts = allProductsResponse.data || [];
-      
+
       // Filter products based on search query
       let filteredProducts = allProducts;
       if (searchQuery.trim()) {
-        filteredProducts = allProducts.filter(product => 
+        filteredProducts = allProducts.filter(product =>
           product.product_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
           product.category?.categoryname?.toLowerCase().includes(searchQuery.toLowerCase())
         );
       }
-      
+
       // Calculate pagination
       const totalCount = filteredProducts.length;
       const totalPagesCount = Math.ceil(totalCount / itemsPerPage);
       const startIndex = (currentPage - 1) * itemsPerPage;
       const endIndex = startIndex + itemsPerPage;
       const paginatedProducts = filteredProducts.slice(startIndex, endIndex);
-      
+
       const productsWithCategory = paginatedProducts.map(product => {
         return { ...product, categoryName: product.category?.categoryname || 'N/A' };
       });
-      
+
       setVegetables(productsWithCategory);
       setTotalProducts(totalCount);
       setTotalPages(totalPagesCount);
@@ -266,7 +266,7 @@ const AddProduct = () => {
     // Always fetch all categories for dropdowns
     fetchAllCategories();
     fetchPackingOptions();
-    
+
     if (activeTab === 'category') {
       fetchCategories();
     }
@@ -372,7 +372,7 @@ const AddProduct = () => {
               }}
               className={`px-5 py-2.5 rounded-lg font-medium transition-all text-sm ${activeTab === 'product' ? 'bg-[#0D7C66] text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'}`}
             >
-              All Product
+              All Products
             </button>
             <button
               onClick={() => {
@@ -436,7 +436,7 @@ const AddProduct = () => {
                       Unit
                     </th>
                     <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">
-                      Market Price (₹/KG)
+                      Type of Packing
                     </th>
                     <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">
                       Last Updated
@@ -469,44 +469,7 @@ const AddProduct = () => {
                         <div className="text-sm text-[#0D5C4D]">{vegetable.unit}</div>
                       </td>
                       <td className="px-6 py-4">
-                        {editingPriceId === vegetable.pid ? (
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={editingPrice}
-                              onChange={(e) => setEditingPrice(e.target.value)}
-                              className="w-24 px-2 py-1 border border-[#0D7C66] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm"
-                              autoFocus
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') handlePriceSave(vegetable.pid);
-                                if (e.key === 'Escape') handlePriceCancel();
-                              }}
-                            />
-                            <button
-                              onClick={() => handlePriceSave(vegetable.pid)}
-                              className="px-2 py-1 bg-[#0D7C66] text-white rounded text-xs hover:bg-[#0a6354]"
-                            >
-                              ✓
-                            </button>
-                            <button
-                              onClick={handlePriceCancel}
-                              className="px-2 py-1 bg-gray-300 text-gray-700 rounded text-xs hover:bg-gray-400"
-                            >
-                              ✕
-                            </button>
-                          </div>
-                        ) : (
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={vegetable.current_price}
-                            onClick={() => handlePriceEdit(vegetable.pid, vegetable.current_price)}
-                            readOnly
-                            className="w-24 px-2 py-1 border border-gray-200 rounded-lg text-sm cursor-pointer hover:border-[#0D7C66] focus:outline-none"
-                            title="Click to edit price"
-                          />
-                        )}
+                        <div className="text-sm text-[#0D5C4D]">{vegetable.packing_type || 'N/A'}</div>
                       </td>
                       <td className="px-6 py-4">
                         <div className="text-sm font-medium text-gray-500">
@@ -559,7 +522,7 @@ const AddProduct = () => {
 
               {totalPages > 1 && (
                 <div className="flex items-center gap-2">
-                  <button 
+                  <button
                     onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
                     disabled={currentPage === 1}
                     className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -572,14 +535,13 @@ const AddProduct = () => {
                     if (totalPages <= 7) {
                       // Show all pages if 7 or fewer
                       return (
-                        <button 
+                        <button
                           key={pageNum}
                           onClick={() => setCurrentPage(pageNum)}
-                          className={`px-4 py-2 rounded-lg font-medium ${
-                            currentPage === pageNum 
-                              ? 'bg-[#0D8568] text-white' 
+                          className={`px-4 py-2 rounded-lg font-medium ${currentPage === pageNum
+                              ? 'bg-[#0D8568] text-white'
                               : 'text-[#6B8782] hover:bg-[#D0E0DB]'
-                          }`}
+                            }`}
                         >
                           {pageNum}
                         </button>
@@ -588,14 +550,13 @@ const AddProduct = () => {
                       // Show condensed pagination for more than 7 pages
                       if (pageNum === 1 || pageNum === totalPages || (pageNum >= currentPage - 1 && pageNum <= currentPage + 1)) {
                         return (
-                          <button 
+                          <button
                             key={pageNum}
                             onClick={() => setCurrentPage(pageNum)}
-                            className={`px-4 py-2 rounded-lg font-medium ${
-                              currentPage === pageNum 
-                                ? 'bg-[#0D8568] text-white' 
+                            className={`px-4 py-2 rounded-lg font-medium ${currentPage === pageNum
+                                ? 'bg-[#0D8568] text-white'
                                 : 'text-[#6B8782] hover:bg-[#D0E0DB]'
-                            }`}
+                              }`}
                           >
                             {pageNum}
                           </button>
@@ -611,7 +572,7 @@ const AddProduct = () => {
                     return null;
                   })}
 
-                  <button 
+                  <button
                     onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
                     disabled={currentPage === totalPages}
                     className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -904,6 +865,14 @@ const AddProduct = () => {
                         <input type="text" name="product_name" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm" required />
                       </div>
                       <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Product Short</label>
+                        <input type="text" name="product_short" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm" />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Net Weight/Kgs</label>
+                        <input type="number" step="0.01" name="net_weight" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm" />
+                      </div>
+                      <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
                         <select name="category_id" className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm" required>
                           <option value="">Select Category</option>
@@ -1044,6 +1013,27 @@ const AddProduct = () => {
                           onChange={handleEditChange}
                           className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm"
                           required
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Product Short</label>
+                        <input
+                          type="text"
+                          name="product_short"
+                          value={editFormData.product_short || ''}
+                          onChange={handleEditChange}
+                          className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Net Weight/Kgs</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          name="net_weight"
+                          value={editFormData.net_weight || ''}
+                          onChange={handleEditChange}
+                          className="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] text-sm"
                         />
                       </div>
                       <div>

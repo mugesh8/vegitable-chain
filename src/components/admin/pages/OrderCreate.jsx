@@ -242,14 +242,15 @@ const NewOrder = () => {
                 const selectedPacking = items.find(item => item.name === defaultPackingType);
                 if (selectedPacking) {
                   defaultBoxWeight = (parseFloat(selectedPacking.weight) || 0).toFixed(2);
-                  defaultBoxCapacity = getBoxCapacity(defaultPackingType).toString();
                 }
+                // Use product's net_weight from product table
+                defaultBoxCapacity = (parseFloat(product.net_weight) || 0).toString();
               }
               
               return {
                 id: index + 1,
                 productId: product.pid.toString(),
-                productName: `${product.pid} - ${product.product_name}`,
+                productName: product.product_name,
                 numBoxes: '',
                 packingType: defaultPackingType,
                 netWeight: '',
@@ -299,12 +300,15 @@ const NewOrder = () => {
                 }
               }
               
+              // Use product's net_weight from product table
+              const productNetWeight = (parseFloat(fullProduct.net_weight) || 0).toString();
+              
               return {
                 ...product,
                 allowedPackingTypes: allowedPackingTypes,
                 packingType: defaultPackingType,
                 boxWeight: defaultBoxWeight,
-                boxCapacity: defaultPackingType ? getBoxCapacity(defaultPackingType).toString() : product.boxCapacity
+                boxCapacity: productNetWeight
               };
             }
           }
@@ -378,13 +382,12 @@ const NewOrder = () => {
           // Handle product name suggestions
           if (field === 'productName') {
             const matchingProduct = allProducts.find(p =>
-              `${p.pid} - ${p.product_name}`.toLowerCase() === value.toLowerCase() ||
               p.product_name.toLowerCase() === value.toLowerCase()
             );
 
             if (matchingProduct) {
               updatedProduct.productId = matchingProduct.pid.toString();
-              updatedProduct.productName = `${matchingProduct.pid} - ${matchingProduct.product_name}`;
+              updatedProduct.productName = matchingProduct.product_name;
             }
 
             if (value.length > 0) {
@@ -413,16 +416,19 @@ const NewOrder = () => {
 
             if (selectedPacking) {
               const actualBoxWeight = parseFloat(selectedPacking.weight) || 0;
-              const boxCapacity = getBoxCapacity(selectedPacking.name);
+              
+              // Get product's net_weight from product table
+              const selectedProduct = allProducts.find(p => p.pid === parseInt(updatedProduct.productId));
+              const productNetWeight = selectedProduct?.net_weight ? parseFloat(selectedProduct.net_weight) : 0;
 
               updatedProduct.boxWeight = actualBoxWeight.toFixed(2);
-              updatedProduct.boxCapacity = boxCapacity.toString();
+              updatedProduct.boxCapacity = productNetWeight.toString();
 
               const numBoxes = parseFloat(updatedProduct.numBoxes) || 0;
 
               // Calculate net weight from number of boxes if available
-              if (boxCapacity > 0 && numBoxes > 0) {
-                const calculatedNetWeight = numBoxes * boxCapacity;
+              if (productNetWeight > 0 && numBoxes > 0) {
+                const calculatedNetWeight = numBoxes * productNetWeight;
                 updatedProduct.netWeight = calculatedNetWeight.toFixed(2);
                 updatedProduct.grossWeight = (calculatedNetWeight + (numBoxes * actualBoxWeight)).toFixed(2);
               }
@@ -540,7 +546,7 @@ const NewOrder = () => {
           const updatedProduct = {
             ...p,
             productId: product.pid.toString(),
-            productName: `${product.pid} - ${product.product_name}`,
+            productName: product.product_name,
             allowedPackingTypes: allowedPackingTypes,
             packingType: defaultPackingType,
             boxWeight: defaultBoxWeight ? defaultBoxWeight.toFixed(2) : ''
@@ -548,13 +554,14 @@ const NewOrder = () => {
           
           // If we have a default packing type, calculate box capacity and weights
           if (defaultPackingType) {
-            const boxCapacity = getBoxCapacity(defaultPackingType);
-            updatedProduct.boxCapacity = boxCapacity.toString();
+            // Use product's net_weight from product table
+            const productNetWeight = parseFloat(product.net_weight) || 0;
+            updatedProduct.boxCapacity = productNetWeight.toString();
             
             // If we have numBoxes, calculate net and gross weight
             const numBoxes = parseFloat(updatedProduct.numBoxes) || 0;
-            if (boxCapacity > 0 && numBoxes > 0) {
-              const calculatedNetWeight = numBoxes * boxCapacity;
+            if (productNetWeight > 0 && numBoxes > 0) {
+              const calculatedNetWeight = numBoxes * productNetWeight;
               updatedProduct.netWeight = calculatedNetWeight.toFixed(2);
               updatedProduct.grossWeight = (calculatedNetWeight + (numBoxes * defaultBoxWeight)).toFixed(2);
             }
@@ -1036,7 +1043,7 @@ const NewOrder = () => {
                                   className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 whitespace-nowrap"
                                   onClick={() => selectProductSuggestion(product.id, prod)}
                                 >
-                                  {prod.pid} - {prod.product_name}
+                                  {prod.product_name}
                                 </button>
                               ))}
                             </div>,
