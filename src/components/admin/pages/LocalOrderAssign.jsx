@@ -213,7 +213,7 @@ const LocalOrderAssign = () => {
         const thirdParties = thirdPartiesRes.data || [];
 
         // Extract labours using the same logic as Stage 2
-        console.log('Full labour response (LocalOrderAssign):', laboursRes);
+        // console.log('Full labour response (LocalOrderAssign):', laboursRes);
 
         let labours = [];
         // Handle different response structures
@@ -226,7 +226,7 @@ const LocalOrderAssign = () => {
           allAttendance = [laboursRes.data];
         }
 
-        console.log('All attendance records (LocalOrderAssign):', allAttendance);
+        // console.log('All attendance records (LocalOrderAssign):', allAttendance);
 
         // Extract labours from nested structure
         if (allAttendance.length > 0 && allAttendance[0].labours) {
@@ -235,7 +235,7 @@ const LocalOrderAssign = () => {
           );
         }
 
-        console.log('Present labours (LocalOrderAssign):', labours);
+        // console.log('Present labours (LocalOrderAssign):', labours);
 
         const drivers = driversRes.data || [];
 
@@ -251,18 +251,18 @@ const LocalOrderAssign = () => {
         let localOrderData = null;
         try {
           const localOrderResponse = await getLocalOrder(id);
-          console.log('=== LOCAL ORDER RESPONSE ===');
-          console.log('Full response:', JSON.stringify(localOrderResponse, null, 2));
-          console.log('Response type:', typeof localOrderResponse);
-          console.log('Has data property:', 'data' in (localOrderResponse || {}));
-          console.log('Has success property:', 'success' in (localOrderResponse || {}));
+          // console.log('=== LOCAL ORDER RESPONSE ===');
+          // console.log('Full response:', JSON.stringify(localOrderResponse, null, 2));
+          // console.log('Response type:', typeof localOrderResponse);
+          // console.log('Has data property:', 'data' in (localOrderResponse || {}));
+          // console.log('Has success property:', 'success' in (localOrderResponse || {}));
 
           // Handle different response structures
           if (localOrderResponse) {
             // Case 1: Response has success and data properties
             if (localOrderResponse.success && localOrderResponse.data) {
               const rawData = localOrderResponse.data;
-              console.log('Raw data from backend:', rawData);
+              // console.log('Raw data from backend:', rawData);
 
               // Parse JSON strings and convert snake_case to camelCase
               localOrderData = {
@@ -278,7 +278,7 @@ const LocalOrderAssign = () => {
                   localOrderData.productAssignments = typeof rawData.product_assignments === 'string'
                     ? JSON.parse(rawData.product_assignments)
                     : rawData.product_assignments;
-                  console.log('Parsed productAssignments:', localOrderData.productAssignments);
+                  // console.log('Parsed productAssignments:', localOrderData.productAssignments);
                 } catch (e) {
                   console.error('Error parsing product_assignments:', e);
                 }
@@ -290,7 +290,7 @@ const LocalOrderAssign = () => {
                   localOrderData.deliveryRoutes = typeof rawData.delivery_routes === 'string'
                     ? JSON.parse(rawData.delivery_routes)
                     : rawData.delivery_routes;
-                  console.log('Parsed deliveryRoutes:', localOrderData.deliveryRoutes);
+                  // console.log('Parsed deliveryRoutes:', localOrderData.deliveryRoutes);
                 } catch (e) {
                   console.error('Error parsing delivery_routes:', e);
                 }
@@ -302,43 +302,43 @@ const LocalOrderAssign = () => {
                   localOrderData.summaryData = typeof rawData.summary_data === 'string'
                     ? JSON.parse(rawData.summary_data)
                     : rawData.summary_data;
-                  console.log('Parsed summaryData:', localOrderData.summaryData);
+                  // console.log('Parsed summaryData:', localOrderData.summaryData);
                 } catch (e) {
                   console.error('Error parsing summary_data:', e);
                 }
               }
 
-              console.log('Using response.data (success=true)');
+              // console.log('Using response.data (success=true)');
             }
             // Case 2: Response has data property (no success field)
             else if (localOrderResponse.data && !localOrderResponse.success) {
               localOrderData = localOrderResponse.data;
-              console.log('Using response.data (no success field)');
+              // console.log('Using response.data (no success field)');
             }
             // Case 3: Response is the data itself
             else if (localOrderResponse.collectionType || localOrderResponse.productAssignments) {
               localOrderData = localOrderResponse;
-              console.log('Response is the data itself');
+              // console.log('Response is the data itself');
             }
           }
 
-          console.log('=== PARSED LOCAL ORDER DATA ===');
-          console.log('Has productAssignments:', !!(localOrderData?.productAssignments));
-          console.log('Has deliveryRoutes:', !!(localOrderData?.deliveryRoutes));
-          console.log('Has summaryData:', !!(localOrderData?.summaryData));
+          // console.log('=== PARSED LOCAL ORDER DATA ===');
+          // console.log('Has productAssignments:', !!(localOrderData?.productAssignments));
+          // console.log('Has deliveryRoutes:', !!(localOrderData?.deliveryRoutes));
+          // console.log('Has summaryData:', !!(localOrderData?.summaryData));
           if (localOrderData) {
-            console.log('Full parsed data:', JSON.stringify(localOrderData, null, 2));
+            // console.log('Full parsed data:', JSON.stringify(localOrderData, null, 2));
           }
         } catch (error) {
-          console.log('=== ERROR LOADING LOCAL ORDER ===');
-          console.log('Error:', error);
-          console.log('Error message:', error.message);
-          console.log('Will try flight assignment or initialize fresh');
+          // console.log('=== ERROR LOADING LOCAL ORDER ===');
+          // console.log('Error:', error);
+          // console.log('Error message:', error.message);
+          // console.log('Will try flight assignment or initialize fresh');
         }
 
         // If we have local order data, use it
         if (localOrderData && localOrderData.productAssignments) {
-          console.log('Loading from local order data');
+          // console.log('Loading from local order data');
 
           // Set collection type
           if (localOrderData.collectionType) {
@@ -395,13 +395,13 @@ const LocalOrderAssign = () => {
               assignmentsByOiid[oiid].push(assignment);
             });
 
-            console.log('Assignments grouped by OIID:', assignmentsByOiid);
+            // console.log('Assignments grouped by OIID:', assignmentsByOiid);
 
             // Apply assignments to rows
             rows.forEach(row => {
               const itemAssignments = assignmentsByOiid[String(row.id)] || []; // Convert to string for lookup
 
-              console.log(`Row ${row.id} (${row.product}): Found ${itemAssignments.length} assignments`);
+              // console.log(`Row ${row.id} (${row.product}): Found ${itemAssignments.length} assignments`);
 
               if (itemAssignments.length > 0) {
                 // Handle first assignment (main row)
@@ -414,19 +414,19 @@ const LocalOrderAssign = () => {
                 row.tapeColor = firstAssignment.tapeColor || '';
                 row.place = firstAssignment.place || ''; // Add place field
 
-                console.log(`  Main assignment:`, {
-                  entityType: row.entityType,
-                  assignedTo: row.assignedTo,
-                  assignedQty: row.assignedQty,
-                  assignedBoxes: row.assignedBoxes,
-                  place: row.place
-                });
+                // console.log(`  Main assignment:`, {
+                //   entityType: row.entityType,
+                //   assignedTo: row.assignedTo,
+                //   assignedQty: row.assignedQty,
+                //   assignedBoxes: row.assignedBoxes,
+                //   place: row.place
+                // });
 
                 // Handle remaining assignments
                 if (itemAssignments.length > 1) {
                   const remainingAssignmentsData = {};
 
-                  console.log(`  Found ${itemAssignments.length - 1} remaining assignments`);
+                  //console.log(`  Found ${itemAssignments.length - 1} remaining assignments`);
 
                   itemAssignments.slice(1).forEach((assignment, idx) => {
                     const remainingKey = `${row.id}-remaining-${idx}`;
@@ -441,7 +441,7 @@ const LocalOrderAssign = () => {
                       place: assignment.place || '' // Add place field
                     };
 
-                    console.log(`  Remaining assignment ${idx} (${remainingKey}):`, remainingAssignmentsData[remainingKey]);
+                   // console.log(`  Remaining assignment ${idx} (${remainingKey}):`, remainingAssignmentsData[remainingKey]);
                   });
 
                   setRemainingRowAssignments(prev => {
@@ -449,7 +449,7 @@ const LocalOrderAssign = () => {
                       ...prev,
                       ...remainingAssignmentsData
                     };
-                    console.log('Updated remainingRowAssignments:', updated);
+                    //console.log('Updated remainingRowAssignments:', updated);
                     return updated;
                   });
                 }
@@ -494,7 +494,7 @@ const LocalOrderAssign = () => {
                     place: place // Extract place from route or determine from entity type
                   };
 
-                  console.log(`Restored remaining assignment from route: ${remainingKey}`, remainingRoutesData[remainingKey]);
+                  //console.log(`Restored remaining assignment from route: ${remainingKey}`, remainingRoutesData[remainingKey]);
                 }
               });
 
@@ -504,7 +504,7 @@ const LocalOrderAssign = () => {
                     ...prev,
                     ...remainingRoutesData
                   };
-                  console.log('Updated remainingRowAssignments from routes:', updated);
+                  //console.log('Updated remainingRowAssignments from routes:', updated);
                   return updated;
                 });
               }
@@ -539,7 +539,7 @@ const LocalOrderAssign = () => {
                 };
               });
 
-              console.log('Transformed delivery routes with labours:', transformedRoutes);
+              //console.log('Transformed delivery routes with labours:', transformedRoutes);
               setDeliveryRoutes(transformedRoutes);
             }
 
@@ -560,7 +560,7 @@ const LocalOrderAssign = () => {
                     routeId = `${item.entityType}-${item.entityId}-${item.oiid}`;
                   }
 
-                  console.log('Restoring status for routeId:', routeId, 'Status:', item.status);
+                  //console.log('Restoring status for routeId:', routeId, 'Status:', item.status);
 
                   statusMap[routeId] = item.status || '';
                   if (item.dropDriver) {
@@ -572,7 +572,7 @@ const LocalOrderAssign = () => {
                 });
               });
 
-              console.log('Final statusMap:', statusMap);
+              //console.log('Final statusMap:', statusMap);
               setAssignmentStatuses(statusMap);
             }
           }
@@ -593,7 +593,7 @@ const LocalOrderAssign = () => {
                 savedDeliveryRoutes = typeof assignmentData.delivery_routes === 'string'
                   ? JSON.parse(assignmentData.delivery_routes)
                   : assignmentData.delivery_routes;
-                console.log('Loaded saved delivery routes:', savedDeliveryRoutes);
+                //console.log('Loaded saved delivery routes:', savedDeliveryRoutes);
               } catch (e) {
                 console.error('Error parsing delivery_routes:', e);
               }
@@ -653,7 +653,7 @@ const LocalOrderAssign = () => {
                 }
               }
 
-              console.log('Parsed product assignments:', assignments);
+              //console.log('Parsed product assignments:', assignments);
 
               // Group assignments by order item ID
               const assignmentsByOiid = {};
@@ -930,9 +930,9 @@ const LocalOrderAssign = () => {
         };
 
         // Log labour data for debugging
-        console.log(`Route ${route.routeId} labours:`, route.labours, 'Type:', Array.isArray(route.labours) ? 'array' : typeof route.labours);
-        console.log(`  - Saving as labours (array):`, routeData.labours);
-        console.log(`  - Saving as labour (string):`, routeData.labour);
+        // console.log(`Route ${route.routeId} labours:`, route.labours, 'Type:', Array.isArray(route.labours) ? 'array' : typeof route.labours);
+        // console.log(`  - Saving as labours (array):`, routeData.labours);
+        // console.log(`  - Saving as labour (string):`, routeData.labour);
 
         return routeData;
       });
@@ -975,20 +975,20 @@ const LocalOrderAssign = () => {
         summaryData: summaryData
       };
 
-      console.log('Saving local order with data:', JSON.stringify(localOrderData, null, 2));
-      console.log('=== DELIVERY ROUTES WITH LABOURS ===');
+      // console.log('Saving local order with data:', JSON.stringify(localOrderData, null, 2));
+      // console.log('=== DELIVERY ROUTES WITH LABOURS ===');
       localOrderData.deliveryRoutes.forEach((route, idx) => {
-        console.log(`Route ${idx + 1}:`, {
-          routeId: route.routeId,
-          location: route.location,
-          labours: route.labours,
-          laboursType: Array.isArray(route.labours) ? 'array' : typeof route.labours,
-          laboursCount: route.labours?.length || 0
-        });
+        // console.log(`Route ${idx + 1}:`, {
+        //   routeId: route.routeId,
+        //   location: route.location,
+        //   labours: route.labours,
+        //   laboursType: Array.isArray(route.labours) ? 'array' : typeof route.labours,
+        //   laboursCount: route.labours?.length || 0
+        // });
       });
 
       const response = await saveLocalOrder(id, localOrderData);
-      console.log('Local order saved:', response);
+      // console.log('Local order saved:', response);
 
       alert('Local order assignment saved successfully!');
       navigate('/order-assign');

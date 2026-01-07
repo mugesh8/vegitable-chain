@@ -52,7 +52,7 @@ const DailyPayout = () => {
 
   const handlePay = (date) => {
     // Handle payment logic here
-    console.log(`Processing payment for ${date}`);
+    // console.log(`Processing payment for ${date}`);
   };
 
   const getStatusColor = (status) => {

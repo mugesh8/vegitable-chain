@@ -113,11 +113,11 @@ const AddThirdParty = () => {
         IFSC_code: formData.ifscCode
       };
 
-      console.log('Submitting data:', submitData);
+      // console.log('Submitting data:', submitData);
       
       // Call the API with JSON data (matching AddFarmer.jsx approach)
       const response = await createThirdParty(submitData);
-      console.log('API Response:', response);
+      // console.log('API Response:', response);
       
       // Navigate back to third party list on success
       navigate('/third-party');

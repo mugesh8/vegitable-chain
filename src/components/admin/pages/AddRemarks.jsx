@@ -28,7 +28,7 @@ const AddRemarks = () => {
     try {
       const response = await getDriverById(id);
       const driverData = response.data;
-      console.log('Driver Data:', driverData);
+      // console.log('Driver Data:', driverData);
       setDriver(driverData);
       setFormData(prev => ({
         ...prev,

@@ -9,6 +9,8 @@ const AddProduct = () => {
   const [activeTab, setActiveTab] = useState('product');
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalProducts, setTotalProducts] = useState(0);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -41,7 +43,15 @@ const AddProduct = () => {
     setEditFormData({ ...vegetables[index] });
     const packingType = vegetables[index].packing_type;
     setEditSelectedPackings(packingType ? packingType.split(',').map(p => p.trim()) : []);
-    setShowEditModal(true);
+    
+    // Ensure categories are loaded before opening modal
+    if (categories.length === 0) {
+      fetchAllCategories().then(() => {
+        setShowEditModal(true);
+      });
+    } else {
+      setShowEditModal(true);
+    }
   };
 
   const handleEditSubmit = async (e) => {
@@ -58,6 +68,7 @@ const AddProduct = () => {
       await updateProduct(vegetables[editingIndex].pid, formData);
       alert('Product updated successfully!');
       setShowEditModal(false);
+      setCurrentPage(1); // Reset to first page
       fetchProducts();
     } catch (error) {
       alert(error.response?.data?.message || 'Failed to update product');
@@ -166,6 +177,7 @@ const AddProduct = () => {
         alert('Product deleted successfully!');
         setShowDeleteModal(false);
         setDeletingIndex(null);
+        setCurrentPage(1); // Reset to first page
         fetchProducts();
       } catch (error) {
         alert(error.response?.data?.message || 'Failed to delete product');
@@ -185,10 +197,32 @@ const AddProduct = () => {
     }
   };
 
+  const fetchAllCategories = async () => {
+    try {
+      const response = await getAllCategories(1, 100);
+      const allCategories = response.data || [];
+      setCategories(allCategories);
+      return allCategories;
+    } catch (error) {
+      console.error('Failed to fetch all categories:', error);
+      return [];
+    }
+  };
+
   const fetchCategories = async () => {
     try {
       const response = await getAllCategories(1, 100);
-      setCategories(response.data || []);
+      let allCategories = response.data || [];
+      
+      // Filter categories based on search query
+      if (searchQuery.trim() && activeTab === 'category') {
+        allCategories = allCategories.filter(category => 
+          category.categoryname.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          category.categorydescription?.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+      }
+      
+      setCategories(allCategories);
     } catch (error) {
       console.error('Failed to fetch categories:', error);
     }
@@ -196,26 +230,52 @@ const AddProduct = () => {
 
   const fetchProducts = async () => {
     try {
-      const response = await getAllProducts(currentPage, 10);
-      const products = response.data || [];
-      const productsWithCategory = products.map(product => {
+      // First, try to get all products to know the total count
+      const allProductsResponse = await getAllProducts(1, 1000); // Get a large number to get all
+      const allProducts = allProductsResponse.data || [];
+      
+      // Filter products based on search query
+      let filteredProducts = allProducts;
+      if (searchQuery.trim()) {
+        filteredProducts = allProducts.filter(product => 
+          product.product_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          product.category?.categoryname?.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+      }
+      
+      // Calculate pagination
+      const totalCount = filteredProducts.length;
+      const totalPagesCount = Math.ceil(totalCount / itemsPerPage);
+      const startIndex = (currentPage - 1) * itemsPerPage;
+      const endIndex = startIndex + itemsPerPage;
+      const paginatedProducts = filteredProducts.slice(startIndex, endIndex);
+      
+      const productsWithCategory = paginatedProducts.map(product => {
         return { ...product, categoryName: product.category?.categoryname || 'N/A' };
       });
+      
       setVegetables(productsWithCategory);
+      setTotalProducts(totalCount);
+      setTotalPages(totalPagesCount);
     } catch (error) {
       console.error('Failed to fetch products:', error);
     }
   };
 
   useEffect(() => {
-    fetchCategories();
+    // Always fetch all categories for dropdowns
+    fetchAllCategories();
     fetchPackingOptions();
+    
+    if (activeTab === 'category') {
+      fetchCategories();
+    }
     if (activeTab === 'product') {
       fetchProducts();
     } else if (activeTab === 'history') {
       fetchPriceHistory();
     }
-  }, [activeTab, currentPage]);
+  }, [activeTab, currentPage, searchQuery]);
 
   const fetchPackingOptions = async () => {
     try {
@@ -284,6 +344,7 @@ const AddProduct = () => {
       } else {
         await createProduct(formData);
         alert('Product created successfully!');
+        setCurrentPage(1); // Reset to first page
         fetchProducts();
       }
       setShowAddModal(false);
@@ -304,16 +365,24 @@ const AddProduct = () => {
         {!selectedProduct && (
           <div className="flex items-center gap-2 mb-6">
             <button
-              onClick={() => setActiveTab('product')}
+              onClick={() => {
+                setActiveTab('product');
+                setCurrentPage(1);
+                setSearchQuery('');
+              }}
               className={`px-5 py-2.5 rounded-lg font-medium transition-all text-sm ${activeTab === 'product' ? 'bg-[#0D7C66] text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'}`}
             >
-              Add Product
+              All Product
             </button>
             <button
-              onClick={() => setActiveTab('category')}
+              onClick={() => {
+                setActiveTab('category');
+                setCurrentPage(1);
+                setSearchQuery('');
+              }}
               className={`px-5 py-2.5 rounded-lg font-medium transition-all text-sm ${activeTab === 'category' ? 'bg-[#0D7C66] text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'}`}
             >
-              Add Category
+              All Category
             </button>
           </div>
         )}
@@ -326,9 +395,12 @@ const AddProduct = () => {
               <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-[#6B8782]" />
               <input
                 type="text"
-                placeholder="Search vegetables..."
+                placeholder={`Search ${activeTab === 'product' ? 'products' : 'categories'}...`}
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setCurrentPage(1); // Reset to first page when searching
+                }}
                 className="w-full pl-12 pr-4 py-3 bg-[#F0F4F3] border-none rounded-xl text-[#0D5C4D] placeholder-[#6B8782] focus:outline-none focus:ring-2 focus:ring-[#0D8568] text-sm"
               />
             </div>
@@ -478,30 +550,76 @@ const AddProduct = () => {
             {/* Pagination */}
             <div className="flex items-center justify-between px-6 py-4 bg-[#F0F4F3] border-t border-[#D0E0DB]">
               <div className="text-sm text-[#6B8782]">
-                Showing {vegetables.length} products
+                {totalProducts > 0 ? (
+                  `Showing ${((currentPage - 1) * itemsPerPage) + 1} to ${Math.min(currentPage * itemsPerPage, totalProducts)} of ${totalProducts} products`
+                ) : (
+                  'No products found'
+                )}
               </div>
 
-              <div className="flex items-center gap-2">
-                <button className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors">
-                  &lt;
-                </button>
+              {totalPages > 1 && (
+                <div className="flex items-center gap-2">
+                  <button 
+                    onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                    disabled={currentPage === 1}
+                    className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    &lt;
+                  </button>
 
-                <button className="px-4 py-2 rounded-lg font-medium bg-[#0D8568] text-white">
-                  1
-                </button>
+                  {[...Array(totalPages)].map((_, index) => {
+                    const pageNum = index + 1;
+                    if (totalPages <= 7) {
+                      // Show all pages if 7 or fewer
+                      return (
+                        <button 
+                          key={pageNum}
+                          onClick={() => setCurrentPage(pageNum)}
+                          className={`px-4 py-2 rounded-lg font-medium ${
+                            currentPage === pageNum 
+                              ? 'bg-[#0D8568] text-white' 
+                              : 'text-[#6B8782] hover:bg-[#D0E0DB]'
+                          }`}
+                        >
+                          {pageNum}
+                        </button>
+                      );
+                    } else {
+                      // Show condensed pagination for more than 7 pages
+                      if (pageNum === 1 || pageNum === totalPages || (pageNum >= currentPage - 1 && pageNum <= currentPage + 1)) {
+                        return (
+                          <button 
+                            key={pageNum}
+                            onClick={() => setCurrentPage(pageNum)}
+                            className={`px-4 py-2 rounded-lg font-medium ${
+                              currentPage === pageNum 
+                                ? 'bg-[#0D8568] text-white' 
+                                : 'text-[#6B8782] hover:bg-[#D0E0DB]'
+                            }`}
+                          >
+                            {pageNum}
+                          </button>
+                        );
+                      } else if (pageNum === currentPage - 2 || pageNum === currentPage + 2) {
+                        return (
+                          <span key={pageNum} className="px-2 py-2 text-[#6B8782]">
+                            ...
+                          </span>
+                        );
+                      }
+                    }
+                    return null;
+                  })}
 
-                <button className="px-4 py-2 rounded-lg font-medium text-[#6B8782] hover:bg-[#D0E0DB]">
-                  2
-                </button>
-
-                <button className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors">
-                  ...
-                </button>
-
-                <button className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors">
-                  &gt;
-                </button>
-              </div>
+                  <button 
+                    onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                    disabled={currentPage === totalPages}
+                    className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    &gt;
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}

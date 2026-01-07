@@ -151,7 +151,7 @@ const EditThirdParty = () => {
 
       // Call the API with JSON data and profile image
       const response = await updateThirdParty(id, submitData, profileImage);
-      console.log('API Response:', response);
+      // console.log('API Response:', response);
       
       // Navigate back to third party list on success
       navigate('/third-party');

@@ -94,7 +94,7 @@ const PackingInventory = () => {
 
   const handleExport = () => {
     // Export functionality
-    console.log('Exporting inventory...');
+    //console.log('Exporting inventory...');
   };
 
   const filteredItems = inventoryItems.filter(item => {

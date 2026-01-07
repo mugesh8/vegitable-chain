@@ -144,7 +144,7 @@ const AddFarmer = () => {
       }
 
       const response = await createFarmer(formDataToSend);
-      console.log('Farmer created successfully:', response);
+      // console.log('Farmer created successfully:', response);
       setSuccess(true);
       
       setTimeout(() => {

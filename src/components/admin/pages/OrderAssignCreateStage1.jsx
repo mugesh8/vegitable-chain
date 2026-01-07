@@ -8,7 +8,7 @@ import { getAllSuppliers } from '../../../api/supplierApi';
 import { getAllThirdParties } from '../../../api/thirdPartyApi';
 import { getAllLabours } from '../../../api/labourApi';
 import { getPresentLaboursToday } from '../../../api/labourAttendanceApi';
-import { getAllDrivers } from '../../../api/driverApi';
+import { getPresentDriversToday } from '../../../api/driverApi';
 import { getAllProducts } from '../../../api/productApi';
 import { getAvailableStock } from '../../../api/orderAssignmentApi';
 import { getVegetableAvailabilityByFarmer } from '../../../api/vegetableAvailabilityApi';
@@ -30,7 +30,6 @@ const OrderAssignCreateStage1 = () => {
   const [deliveryRoutes, setDeliveryRoutes] = useState([]);
   const [orderDetails, setOrderDetails] = useState(orderData || null);
   const [orderType, setOrderType] = useState('Local Grade');
-  const [selectedType, setSelectedType] = useState('Box');
   const [assignmentStatuses, setAssignmentStatuses] = useState({});
   const [availableStock, setAvailableStock] = useState({});
   const [farmerAvailability, setFarmerAvailability] = useState({});
@@ -81,29 +80,14 @@ const OrderAssignCreateStage1 = () => {
     fetchFarmerAvailability();
   }, [assignmentOptions.farmers]);
 
-  // Update selectedType and isBoxBasedOrder when orderDetails changes
+  // Update isBoxBasedOrder when orderDetails changes
   useEffect(() => {
     if (orderDetails?.items?.length > 0) {
-      const packing = orderDetails.items[0].packing_type || "";
-      const hasWeight = /\d+\s*kg/i.test(packing);
-
       // Determine if order was created with boxes or net weight
       const firstItem = orderDetails.items[0];
       const hasBoxes = firstItem.num_boxes && parseInt(firstItem.num_boxes) > 0;
       setIsBoxBasedOrder(hasBoxes);
-
-      if (hasWeight) {
-        if (/box/i.test(packing)) {
-          setSelectedType("Box");
-          return;
-        }
-        if (/bag/i.test(packing)) {
-          setSelectedType("Bag");
-          return;
-        }
-      }
     }
-    setSelectedType("Box");
   }, [orderDetails]);
 
   // Helper function to create delivery route for an assignment
@@ -200,7 +184,7 @@ const OrderAssignCreateStage1 = () => {
           getAllSuppliers(),
           getAllThirdParties(),
           getPresentLaboursToday(),
-          getAllDrivers(),
+          getPresentDriversToday(),
           getAllProducts(1, 1000)
         ]);
 
@@ -228,7 +212,7 @@ const OrderAssignCreateStage1 = () => {
           );
         }
 
-        const drivers = driversRes.data || [];
+        const drivers = driversRes.data?.map(record => record.driver).filter(d => d) || [];
 
         setAssignmentOptions({
           farmers,
@@ -242,8 +226,8 @@ const OrderAssignCreateStage1 = () => {
           const assignmentResponse = await getOrderAssignment(id);
           const assignmentData = assignmentResponse.data;
 
-          if (assignmentData.collection_type) {
-            setSelectedType(assignmentData.collection_type);
+          if (assignmentData.order_auto_id) {
+            setOrderDetails(prev => ({ ...prev, order_auto_id: assignmentData.order_auto_id }));
           }
 
           if (assignmentData.order_type) {
@@ -676,16 +660,15 @@ const OrderAssignCreateStage1 = () => {
 
       const stage1Data = {
         orderType: orderType,
-        collectionType: selectedType,
         productAssignments: mergedAssignments,
         deliveryRoutes: routesWithDrivers,
         summaryData: summaryData
       };
 
-      console.log('Saving Stage 1 with data:', JSON.stringify(stage1Data, null, 2));
+      // console.log('Saving Stage 1 with data:', JSON.stringify(stage1Data, null, 2));
 
       const response = await updateStage1Assignment(id, stage1Data);
-      console.log('Stage 1 saved:', response);
+      // console.log('Stage 1 saved:', response);
 
       // Check if excess stock was created
       const hasExcessStock = mergedAssignments.some(assignment => {
@@ -850,7 +833,7 @@ const OrderAssignCreateStage1 = () => {
             </thead>
             <tbody>
               <tr>
-                <td className="px-4 py-3 text-sm text-left text-gray-900">{orderDetails?.oid || id}</td>
+                <td className="px-4 py-3 text-sm text-left text-gray-900">{orderDetails?.order_auto_id || id}</td>
                 <td className="px-4 py-3 text-sm text-left text-gray-900">{orderDetails?.customer_name || 'N/A'}</td>
                 <td className="px-4 py-3 text-sm text-left text-gray-900">{orderDetails?.items?.length || 0} Items</td>
                 <td className="px-4 py-3">
@@ -895,25 +878,7 @@ const OrderAssignCreateStage1 = () => {
 
       {/* Stage 1 Section */}
       <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
-        <div className="flex flex-col gap-4 mb-2">
-          <h2 className="text-lg font-semibold text-gray-900">Stage 1: Product Collection from Sources</h2>
-
-          {/* Collection Type Dropdown */}
-          <div className="flex items-center gap-3">
-            <label className="text-sm font-medium text-gray-700">Collection Type:</label>
-            <div className="relative">
-              <select
-                value={selectedType}
-                onChange={(e) => setSelectedType(e.target.value)}
-                className="appearance-none px-4 py-2 pr-10 bg-white border-2 border-emerald-600 text-emerald-700 rounded-lg font-medium cursor-pointer hover:bg-emerald-50 transition-colors outline-none"
-              >
-                <option value="Box">Box</option>
-                <option value="Bag">Bag</option>
-              </select>
-              <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-emerald-700 pointer-events-none" />
-            </div>
-          </div>
-        </div>
+        <h2 className="text-lg font-semibold text-gray-900 mb-2">Stage 1: Product Collection from Sources</h2>
         <p className="text-sm text-gray-600 mb-6">Assign order products to farmers, suppliers, and third parties for collection and delivery to packaging location</p>
 
         {/* Product Table - Desktop */}
@@ -1911,24 +1876,24 @@ const OrderAssignCreateStage1 = () => {
                                 <div className="mt-2 space-y-2">
                                   <select
                                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
-                                    value={assignmentStatuses[`${assignment.routeId}-dropDriver`] || ''}
-                                    onChange={(e) => setAssignmentStatuses(prev => ({ ...prev, [`${assignment.routeId}-dropDriver`]: e.target.value }))}
+                                    value={assignmentStatuses[`${assignment.routeId}-collection`] || ''}
+                                    onChange={(e) => setAssignmentStatuses(prev => ({ ...prev, [`${assignment.routeId}-collection`]: e.target.value }))}
                                   >
-                                    <option value="">Select driver...</option>
-                                    {assignmentOptions.drivers && assignmentOptions.drivers.map(driver => (
-                                      <option key={`driver-${driver.did}`} value={`${driver.driver_name} - ${driver.driver_id}`}>
-                                        {driver.driver_name} - {driver.driver_id}
-                                      </option>
-                                    ))}
+                                    <option value="">Collection status...</option>
+                                    <option value="Collection">Collection</option>
                                   </select>
-                                  {assignmentStatuses[`${assignment.routeId}-dropDriver`] && (
+                                  {assignmentStatuses[`${assignment.routeId}-collection`] === 'Collection' && (
                                     <select
                                       className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
-                                      value={assignmentStatuses[`${assignment.routeId}-collection`] || ''}
-                                      onChange={(e) => setAssignmentStatuses(prev => ({ ...prev, [`${assignment.routeId}-collection`]: e.target.value }))}
+                                      value={assignmentStatuses[`${assignment.routeId}-dropDriver`] || ''}
+                                      onChange={(e) => setAssignmentStatuses(prev => ({ ...prev, [`${assignment.routeId}-dropDriver`]: e.target.value }))}
                                     >
-                                      <option value="">Collection status...</option>
-                                      <option value="Collection">Collection</option>
+                                      <option value="">Select driver...</option>
+                                      {assignmentOptions.drivers && assignmentOptions.drivers.map(driver => (
+                                        <option key={`driver-${driver.did}`} value={`${driver.driver_name} - ${driver.driver_id}`}>
+                                          {driver.driver_name} - {driver.driver_id}
+                                        </option>
+                                      ))}
                                     </select>
                                   )}
                                 </div>
@@ -2009,24 +1974,26 @@ const OrderAssignCreateStage1 = () => {
                               <div className="mt-2 space-y-2">
                                 <select
                                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
-                                  value={assignmentStatuses[`${assignment.routeId}-dropDriver`] || ''}
-                                  onChange={(e) => setAssignmentStatuses(prev => ({ ...prev, [`${assignment.routeId}-dropDriver`]: e.target.value }))}
-                                >
-                                  <option value="">Select driver...</option>
-                                  {assignmentOptions.drivers && assignmentOptions.drivers.map(driver => (
-                                    <option key={`driver-${driver.did}`} value={`${driver.driver_name} - ${driver.driver_id}`}>
-                                      {driver.driver_name} - {driver.driver_id}
-                                    </option>
-                                  ))}
-                                </select>
-                                <select
-                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
                                   value={assignmentStatuses[`${assignment.routeId}-collection`] || ''}
                                   onChange={(e) => setAssignmentStatuses(prev => ({ ...prev, [`${assignment.routeId}-collection`]: e.target.value }))}
                                 >
                                   <option value="">Collection status...</option>
                                   <option value="Collection">Collection</option>
                                 </select>
+                                {assignmentStatuses[`${assignment.routeId}-collection`] === 'Collection' && (
+                                  <select
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                                    value={assignmentStatuses[`${assignment.routeId}-dropDriver`] || ''}
+                                    onChange={(e) => setAssignmentStatuses(prev => ({ ...prev, [`${assignment.routeId}-dropDriver`]: e.target.value }))}
+                                  >
+                                    <option value="">Select driver...</option>
+                                    {assignmentOptions.drivers && assignmentOptions.drivers.map(driver => (
+                                      <option key={`driver-${driver.did}`} value={`${driver.driver_name} - ${driver.driver_id}`}>
+                                        {driver.driver_name} - {driver.driver_id}
+                                      </option>
+                                    ))}
+                                  </select>
+                                )}
                               </div>
                             )}
                           </div>

@@ -269,6 +269,14 @@ const OrderAssignCreateStage4 = () => {
                     const assignmentResponse = await getOrderAssignment(id);
                     const assignmentData = assignmentResponse.data;
 
+                    // Update orderDetails with order_auto_id from assignment data
+                    if (assignmentData.order_auto_id && orderDetails) {
+                        setOrderDetails(prev => ({
+                            ...prev,
+                            order_auto_id: assignmentData.order_auto_id
+                        }));
+                    }
+
                     if (assignmentData.collection_type) {
                         setSelectedType(assignmentData.collection_type);
                     }
@@ -296,7 +304,7 @@ const OrderAssignCreateStage4 = () => {
                                 setAvailableStock(stage4Data.reviewData.availableStock);
                             }
 
-                            console.log('Loaded from stage4_data');
+                            //console.log('Loaded from stage4_data');
                             return; // Exit early if stage4_data exists
                         } catch (e) {
                             console.error('Error parsing stage4_data:', e);
@@ -737,10 +745,10 @@ const OrderAssignCreateStage4 = () => {
                 summaryData: summaryData
             };
 
-            console.log('Saving Stage 1 with data:', JSON.stringify(stage1Data, null, 2));
+            //console.log('Saving Stage 1 with data:', JSON.stringify(stage1Data, null, 2));
 
             const response = await updateStage1Assignment(id, stage1Data);
-            console.log('Stage 1 saved:', response);
+            //console.log('Stage 1 saved:', response);
 
             // Check if excess stock was created
             const hasExcessStock = mergedAssignments.some(assignment => {
@@ -786,7 +794,7 @@ const OrderAssignCreateStage4 = () => {
             };
 
             const response = await updateStage4Assignment(id, stage4Data);
-            console.log('Stage 4 saved:', response);
+            //console.log('Stage 4 saved:', response);
             
             alert('Stage 4 review completed successfully!');
             navigate('/order-assign');
@@ -946,7 +954,7 @@ const OrderAssignCreateStage4 = () => {
                         </thead>
                         <tbody>
                             <tr>
-                                <td className="px-4 py-3 text-sm text-left text-gray-900">{orderDetails?.oid || id}</td>
+                                <td className="px-4 py-3 text-sm text-left text-gray-900">{orderDetails?.order_auto_id || id}</td>
                                 <td className="px-4 py-3 text-sm text-left text-gray-900">{orderDetails?.customer_name || 'N/A'}</td>
                                 <td className="px-4 py-3 text-sm text-left text-gray-900">{orderDetails?.items?.length || 0} Items</td>
                                 <td className="px-4 py-3">

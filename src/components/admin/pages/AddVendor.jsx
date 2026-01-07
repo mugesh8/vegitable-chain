@@ -198,13 +198,13 @@ const AddVendorForm = () => {
       };
       
       // Log the data being sent for debugging
-      console.log('Form data being sent:', vendorData);
+      // console.log('Form data being sent:', vendorData);
       
       // Create vendor
       const response = await createVendor(vendorData, profileImage);
       
       if (response.success) {
-        console.log('Vendor created successfully:', response.data);
+        // console.log('Vendor created successfully:', response.data);
         navigate('/vendors');
       } else {
         setError(response.message || 'Failed to create vendor');

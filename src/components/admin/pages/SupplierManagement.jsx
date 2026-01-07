@@ -233,7 +233,7 @@ const SupplierDashboard = () => {
                             alt={supplier.supplier_name}
                             className="w-full h-full object-cover"
                             onError={(e) => {
-                              console.log('Image failed to load:', e.target.src);
+                              //console.log('Image failed to load:', e.target.src);
                               e.target.style.display = 'none';
                             }}
                           />

@@ -143,7 +143,7 @@ const EditVendorDetails = () => {
 
   const handleConfirm = (e) => {
     e.preventDefault();
-    console.log('Form updated:', formData);
+    // console.log('Form updated:', formData);
   };
 
   const handleCancel = () => {

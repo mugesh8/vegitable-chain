@@ -205,8 +205,13 @@ const NewOrder = () => {
   }, []);
 
   useEffect(() => {
-    const fetchProducts = async () => {
+    const fetchData = async () => {
       try {
+        // First fetch packing options
+        const items = await getBoxesAndBags();
+        setPackingOptions(items);
+        
+        // Then fetch products
         const response = await getAllProducts(1, 1000);
         const activeProducts = (response.data || []).filter(p => p.product_status === 'active');
         setAllProducts(activeProducts);
@@ -219,48 +224,56 @@ const NewOrder = () => {
         if (!draftIdFromUrl && !orderIdFromUrl) {
           const defaultProducts = activeProducts.filter(p => p.default_status === true);
           if (defaultProducts.length > 0) {
-            const formattedProducts = defaultProducts.map((product, index) => ({
-              id: index + 1,
-              productId: product.pid.toString(),
-              productName: `${product.pid} - ${product.product_name}`,
-              numBoxes: '',
-              packingType: '',
-              netWeight: '',
-              grossWeight: '',
-              boxWeight: '',
-              boxCapacity: '',
-              showMoreDetails: false,
-              allowedPackingTypes: product.packing_type
+            const formattedProducts = defaultProducts.map((product, index) => {
+              const allowedPackingTypes = product.packing_type
                 ? product.packing_type.split(',').map(p => p.trim())
-                : []
-            }));
+                : [];
+              
+              // Determine default packing type and box weight
+              let defaultPackingType = '';
+              let defaultBoxWeight = '';
+              let defaultBoxCapacity = '';
+              
+              if (allowedPackingTypes.length > 0) {
+                // Use first packing type as default
+                defaultPackingType = allowedPackingTypes[0];
+                
+                // Find the corresponding packing option to get box weight
+                const selectedPacking = items.find(item => item.name === defaultPackingType);
+                if (selectedPacking) {
+                  defaultBoxWeight = (parseFloat(selectedPacking.weight) || 0).toFixed(2);
+                  defaultBoxCapacity = getBoxCapacity(defaultPackingType).toString();
+                }
+              }
+              
+              return {
+                id: index + 1,
+                productId: product.pid.toString(),
+                productName: `${product.pid} - ${product.product_name}`,
+                numBoxes: '',
+                packingType: defaultPackingType,
+                netWeight: '',
+                grossWeight: '',
+                boxWeight: defaultBoxWeight,
+                boxCapacity: defaultBoxCapacity,
+                showMoreDetails: false,
+                allowedPackingTypes: allowedPackingTypes
+              };
+            });
             setProducts(formattedProducts);
           }
         }
       } catch (error) {
-        console.error('Error fetching products:', error);
+        console.error('Error fetching data:', error);
       }
     };
 
-    fetchProducts();
-  }, []);
-
-  useEffect(() => {
-    const fetchPackingOptions = async () => {
-      try {
-        const items = await getBoxesAndBags();
-        setPackingOptions(items);
-      } catch (error) {
-        console.error('Error fetching packing options:', error);
-      }
-    };
-
-    fetchPackingOptions();
+    fetchData();
   }, []);
 
   // Update allowedPackingTypes for existing products when allProducts is loaded
   useEffect(() => {
-    if (allProducts.length > 0) {
+    if (allProducts.length > 0 && packingOptions.length > 0) {
       setProducts(prev =>
         prev.map(product => {
           if (product.productId && !product.allowedPackingTypes) {
@@ -269,9 +282,29 @@ const NewOrder = () => {
             const fullProduct = allProducts.find(p => p.pid.toString() === numericId);
 
             if (fullProduct && fullProduct.packing_type) {
+              const allowedPackingTypes = fullProduct.packing_type.split(',').map(p => p.trim());
+              
+              // Determine default packing type and box weight
+              let defaultPackingType = product.packingType || '';
+              let defaultBoxWeight = product.boxWeight || '';
+              
+              if (allowedPackingTypes.length > 0 && !defaultPackingType) {
+                // Use first packing type as default if not already set
+                defaultPackingType = allowedPackingTypes[0];
+                
+                // Find the corresponding packing option to get box weight
+                const selectedPacking = packingOptions.find(item => item.name === defaultPackingType);
+                if (selectedPacking) {
+                  defaultBoxWeight = (parseFloat(selectedPacking.weight) || 0).toFixed(2);
+                }
+              }
+              
               return {
                 ...product,
-                allowedPackingTypes: fullProduct.packing_type.split(',').map(p => p.trim())
+                allowedPackingTypes: allowedPackingTypes,
+                packingType: defaultPackingType,
+                boxWeight: defaultBoxWeight,
+                boxCapacity: defaultPackingType ? getBoxCapacity(defaultPackingType).toString() : product.boxCapacity
               };
             }
           }
@@ -279,7 +312,7 @@ const NewOrder = () => {
         })
       );
     }
-  }, [allProducts]);
+  }, [allProducts, packingOptions]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -476,25 +509,58 @@ const NewOrder = () => {
 
   const selectProductSuggestion = (id, product) => {
     // Debug: Log the product data
-    console.log('Selected product:', product);
-    console.log('Product packing_type:', product.packing_type);
+    // console.log('Selected product:', product);
+    // console.log('Product packing_type:', product.packing_type);
 
     // Parse the product's packing_type field to get allowed packing types
     const allowedPackingTypes = product.packing_type
       ? product.packing_type.split(',').map(p => p.trim())
       : [];
 
-    console.log('Parsed allowedPackingTypes:', allowedPackingTypes);
+    //console.log('Parsed allowedPackingTypes:', allowedPackingTypes);
+
+    // Determine default packing type and box weight
+    let defaultPackingType = '';
+    let defaultBoxWeight = '';
+    
+    if (allowedPackingTypes.length > 0) {
+      // Use first packing type as default (for both single and multiple)
+      defaultPackingType = allowedPackingTypes[0];
+      
+      // Find the corresponding packing option to get box weight
+      const selectedPacking = packingOptions.find(item => item.name === defaultPackingType);
+      if (selectedPacking) {
+        defaultBoxWeight = parseFloat(selectedPacking.weight) || 0;
+      }
+    }
 
     setProducts(prev =>
       prev.map(p => {
         if (p.id === id) {
-          return {
+          const updatedProduct = {
             ...p,
             productId: product.pid.toString(),
             productName: `${product.pid} - ${product.product_name}`,
-            allowedPackingTypes: allowedPackingTypes
+            allowedPackingTypes: allowedPackingTypes,
+            packingType: defaultPackingType,
+            boxWeight: defaultBoxWeight ? defaultBoxWeight.toFixed(2) : ''
           };
+          
+          // If we have a default packing type, calculate box capacity and weights
+          if (defaultPackingType) {
+            const boxCapacity = getBoxCapacity(defaultPackingType);
+            updatedProduct.boxCapacity = boxCapacity.toString();
+            
+            // If we have numBoxes, calculate net and gross weight
+            const numBoxes = parseFloat(updatedProduct.numBoxes) || 0;
+            if (boxCapacity > 0 && numBoxes > 0) {
+              const calculatedNetWeight = numBoxes * boxCapacity;
+              updatedProduct.netWeight = calculatedNetWeight.toFixed(2);
+              updatedProduct.grossWeight = (calculatedNetWeight + (numBoxes * defaultBoxWeight)).toFixed(2);
+            }
+          }
+          
+          return updatedProduct;
         }
         return p;
       })
@@ -955,7 +1021,15 @@ const NewOrder = () => {
                               }}
                               className="mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-40 overflow-y-auto"
                             >
-                              {allProducts.map((prod) => (
+                              {allProducts
+                                .filter(prod => {
+                                  // Filter out products that are already selected in other rows
+                                  const selectedProductIds = products
+                                    .filter(p => p.id !== product.id && p.productId) // Exclude current row and empty selections
+                                    .map(p => p.productId.toString());
+                                  return !selectedProductIds.includes(prod.pid.toString());
+                                })
+                                .map((prod) => (
                                 <button
                                   key={prod.pid}
                                   type="button"
