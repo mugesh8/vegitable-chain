@@ -34,6 +34,14 @@ const StockManagement = () => {
   const [products, setProducts] = useState([]);
   const [showSellForm, setShowSellForm] = useState(false);
   const [sellStockData, setSellStockData] = useState([]);
+  const [dataFetched, setDataFetched] = useState({
+    stock: false,
+    products: false,
+    entities: false,
+    inventory: false,
+    companies: false,
+    sell: false
+  });
 
   // Sell Stock Form State
   const [sellForm, setSellForm] = useState({
@@ -65,99 +73,120 @@ const StockManagement = () => {
   });
 
   useEffect(() => {
-    const fetchStock = async () => {
-      try {
-        const response = await getAllStock();
-        if (response.success) {
-          setStockData(response.data || []);
+    if (!dataFetched.stock) {
+      const fetchStock = async () => {
+        try {
+          const response = await getAllStock();
+          if (response.success) {
+            setStockData(response.data || []);
+          }
+        } catch (error) {
+          console.error('Error fetching stock:', error.message);
+        } finally {
+          setLoading(false);
+          setDataFetched(prev => ({ ...prev, stock: true }));
         }
-      } catch (error) {
-        console.error('Error fetching stock:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchStock();
-  }, []);
+      };
+      fetchStock();
+    }
+  }, [dataFetched.stock]);
 
   useEffect(() => {
-    const fetchProducts = async () => {
-      try {
-        const response = await getAllProducts(1, 1000);
-        if (response.success) {
-          setProducts(response.data || []);
+    if (!dataFetched.products) {
+      const fetchProducts = async () => {
+        try {
+          const response = await getAllProducts(1, 1000);
+          if (response.success) {
+            setProducts(response.data || []);
+          }
+        } catch (error) {
+          console.error('Error fetching products:', error.message);
+        } finally {
+          setDataFetched(prev => ({ ...prev, products: true }));
         }
-      } catch (error) {
-        console.error('Error fetching products:', error);
-      }
-    };
-    fetchProducts();
-  }, []);
+      };
+      fetchProducts();
+    }
+  }, [dataFetched.products]);
 
   useEffect(() => {
-    const fetchEntities = async () => {
-      try {
-        const [suppliersRes, thirdPartiesRes, driversRes, laboursRes] = await Promise.all([
-          getAllSuppliers(),
-          getAllThirdParties(),
-          getAllDrivers(),
-          getAllLabours()
-        ]);
+    if (!dataFetched.entities) {
+      const fetchEntities = async () => {
+        try {
+          const [suppliersRes, thirdPartiesRes, driversRes, laboursRes] = await Promise.all([
+            getAllSuppliers(),
+            getAllThirdParties(),
+            getAllDrivers(),
+            getAllLabours()
+          ]);
 
-        if (suppliersRes.success) {
-          setSuppliers(suppliersRes.data || []);
-        }
+          if (suppliersRes.success) {
+            setSuppliers(suppliersRes.data || []);
+          }
 
-        if (thirdPartiesRes.success) {
-          setThirdParties(thirdPartiesRes.data || []);
-        }
+          if (thirdPartiesRes.success) {
+            setThirdParties(thirdPartiesRes.data || []);
+          }
 
-        if (driversRes.success) {
-          setDrivers(driversRes.data || []);
-        }
+          if (driversRes.success) {
+            setDrivers(driversRes.data || []);
+          }
 
-        if (laboursRes.success) {
-          setLabours(laboursRes.data || []);
+          if (laboursRes.success) {
+            setLabours(laboursRes.data || []);
+          }
+        } catch (error) {
+          console.error('Error fetching entities:', error.message);
+        } finally {
+          setDataFetched(prev => ({ ...prev, entities: true }));
         }
-      } catch (error) {
-        console.error('Error fetching entities:', error);
-      }
-    };
-    fetchEntities();
-  }, []);
+      };
+      fetchEntities();
+    }
+  }, [dataFetched.entities]);
 
   useEffect(() => {
-    const fetchInventoryProducts = async () => {
-      try {
-        const response = await getAllInventory(1, 1000);
-        setInventoryProducts(response.data || []);
-      } catch (error) {
-        console.error('Error fetching inventory products:', error);
-      }
-    };
-    fetchInventoryProducts();
-  }, []);
+    if (!dataFetched.inventory) {
+      const fetchInventoryProducts = async () => {
+        try {
+          const response = await getAllInventory(1, 1000);
+          setInventoryProducts(response.data || []);
+        } catch (error) {
+          console.error('Error fetching inventory products:', error.message);
+        } finally {
+          setDataFetched(prev => ({ ...prev, inventory: true }));
+        }
+      };
+      fetchInventoryProducts();
+    }
+  }, [dataFetched.inventory]);
 
   useEffect(() => {
-    const fetchInventoryCompanies = async () => {
-      try {
-        const response = await getAllCompanies();
-        setInventoryCompanies(response.data || []);
-      } catch (error) {
-        console.error('Error fetching inventory companies:', error);
-      }
-    };
-    fetchInventoryCompanies();
-  }, []);
+    if (!dataFetched.companies) {
+      const fetchInventoryCompanies = async () => {
+        try {
+          const response = await getAllCompanies();
+          setInventoryCompanies(response.data || []);
+        } catch (error) {
+          console.error('Error fetching inventory companies:', error.message);
+        } finally {
+          setDataFetched(prev => ({ ...prev, companies: true }));
+        }
+      };
+      fetchInventoryCompanies();
+    }
+  }, [dataFetched.companies]);
 
   useEffect(() => {
-    if (activeTab === 'inventory') {
+    if (activeTab === 'inventory' && !dataFetched.sell) {
       fetchInventoryStocks();
+      setDataFetched(prev => ({ ...prev, sell: true }));
     }
-    if (activeTab === 'sell') {
+    if (activeTab === 'sell' && !dataFetched.sell) {
       fetchSellStocks();
+      setDataFetched(prev => ({ ...prev, sell: true }));
     }
-  }, [activeTab]);
+  }, [activeTab, dataFetched.sell]);
 
   const summaryCards = [
     { title: 'Total Stock Items', value: stockData.length, bgColor: 'bg-[#D4F4E8]', textColor: 'text-[#0D7C66]' },

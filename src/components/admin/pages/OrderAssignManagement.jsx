@@ -235,21 +235,95 @@ const OrderAssignManagement = () => {
                     <span className="text-sm font-semibold text-gray-900">₹{order.items ? order.items.reduce((sum, item) => sum + parseFloat(item.total_price || 0), 0).toFixed(2) : '0.00'}</span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`px-3 py-1.5 rounded-full text-xs font-medium ${{
-                      'pending': 'bg-purple-100 text-purple-700',
-                      'confirmed': 'bg-emerald-100 text-emerald-700',
-                      'processing': 'bg-yellow-100 text-yellow-700',
-                      'shipped': 'bg-blue-100 text-blue-700',
-                      'delivered': 'bg-emerald-600 text-white',
-                      'cancelled': 'bg-red-100 text-red-700'
-                    }[order.order_status] || 'bg-gray-100 text-gray-700'}`}>
-                      {order.order_status.charAt(0).toUpperCase() + order.order_status.slice(1)}
-                    </span>
+                    {(() => {
+                      const assignment = assignments[order.oid];
+                      const isLocalOrder = order.order_type === 'local';
+
+                      // Check if all stages are completed for flight orders
+                      const allStagesCompleted = !isLocalOrder && assignment &&
+                        assignment.stage1_status === 'completed' &&
+                        assignment.stage2_status === 'completed' &&
+                        assignment.stage3_status === 'completed' &&
+                        assignment.stage4_status === 'completed';
+
+                      // Additionally check if all delivery statuses in Stage 3 are completed
+                      let allDeliveriesCompleted = true;
+                      if (allStagesCompleted && assignment.stage3_data) {
+                        try {
+                          const stage3Data = typeof assignment.stage3_data === 'string'
+                            ? JSON.parse(assignment.stage3_data)
+                            : assignment.stage3_data;
+
+                          if (stage3Data.products && Array.isArray(stage3Data.products)) {
+                            // Check if all products have status 'completed'
+                            allDeliveriesCompleted = stage3Data.products.every(
+                              product => product.status === 'completed'
+                            );
+                          }
+                        } catch (e) {
+                          console.error('Error parsing stage3_data:', e);
+                          allDeliveriesCompleted = false;
+                        }
+                      }
+
+                      const fullyCompleted = allStagesCompleted && allDeliveriesCompleted;
+
+                      if (fullyCompleted) {
+                        return (
+                          <span className="px-3 py-1.5 rounded-full text-xs font-medium bg-emerald-600 text-white">
+                            Completed
+                          </span>
+                        );
+                      }
+
+                      return (
+                        <span className={`px-3 py-1.5 rounded-full text-xs font-medium ${{
+                          'pending': 'bg-purple-100 text-purple-700',
+                          'confirmed': 'bg-emerald-100 text-emerald-700',
+                          'processing': 'bg-yellow-100 text-yellow-700',
+                          'shipped': 'bg-blue-100 text-blue-700',
+                          'delivered': 'bg-emerald-600 text-white',
+                          'cancelled': 'bg-red-100 text-red-700'
+                        }[order.order_status] || 'bg-gray-100 text-gray-700'}`}>
+                          {order.order_status.charAt(0).toUpperCase() + order.order_status.slice(1)}
+                        </span>
+                      );
+                    })()}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     {(() => {
+                      const assignment = assignments[order.oid];
                       const isLocalOrder = order.order_type === 'local';
-                      const isStage1Completed = assignments[order.oid]?.stage1_status === 'completed';
+                      const isStage1Completed = assignment?.stage1_status === 'completed';
+
+                      // Check if all stages are completed for flight orders
+                      const allStagesCompleted = !isLocalOrder && assignment &&
+                        assignment.stage1_status === 'completed' &&
+                        assignment.stage2_status === 'completed' &&
+                        assignment.stage3_status === 'completed' &&
+                        assignment.stage4_status === 'completed';
+
+                      // Additionally check if all delivery statuses in Stage 3 are completed
+                      let allDeliveriesCompleted = true;
+                      if (allStagesCompleted && assignment.stage3_data) {
+                        try {
+                          const stage3Data = typeof assignment.stage3_data === 'string'
+                            ? JSON.parse(assignment.stage3_data)
+                            : assignment.stage3_data;
+
+                          if (stage3Data.products && Array.isArray(stage3Data.products)) {
+                            // Check if all products have status 'completed'
+                            allDeliveriesCompleted = stage3Data.products.every(
+                              product => product.status === 'completed'
+                            );
+                          }
+                        } catch (e) {
+                          console.error('Error parsing stage3_data:', e);
+                          allDeliveriesCompleted = false;
+                        }
+                      }
+
+                      const fullyCompleted = allStagesCompleted && allDeliveriesCompleted;
 
                       // For local orders, check if local order data actually exists (not null or undefined)
                       const localOrderData = localOrders[order.oid];
@@ -260,6 +334,20 @@ const OrderAssignManagement = () => {
                       const shouldShowEdit = isLocalOrder ? hasLocalOrderData : isStage1Completed;
 
                       //console.log(`Order ${order.oid}: type=${order.order_type}, localOrderData=`, localOrderData, `hasLocalData=${hasLocalOrderData}, stage1=${isStage1Completed}, showEdit=${shouldShowEdit}`);
+
+                      // If all stages and deliveries are completed, show "Done" button
+                      if (fullyCompleted) {
+                        return (
+                          <button
+                            onClick={() => {
+                              navigate(`/order-assign/stage1/${order.oid}`, { state: { orderData: order } });
+                            }}
+                            className="px-4 py-2 bg-gray-400 text-white text-sm font-medium rounded-lg hover:bg-gray-500 transition-colors"
+                          >
+                            Done
+                          </button>
+                        );
+                      }
 
                       if (shouldShowEdit) {
                         return (

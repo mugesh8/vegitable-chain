@@ -753,7 +753,7 @@ const OrderAssignCreateStage2 = () => {
                               setProductRows(updatedRows);
                             }}
                           >
-                            <option value="">Select tape...</option>
+                            <option key="empty" value="">Select tape...</option>
                             {tapes.map(tape => (
                               <option key={tape.iid} value={tape.color}>
                                 {tape.color}
@@ -1032,7 +1032,7 @@ const OrderAssignCreateStage2 = () => {
                               setProductRows(updatedRows);
                             }}
                           >
-                            <option value="">Select tape...</option>
+                            <option key="empty" value="">Select tape...</option>
                             {tapes.map(tape => (
                               <option key={tape.iid} value={tape.color}>
                                 {tape.color}

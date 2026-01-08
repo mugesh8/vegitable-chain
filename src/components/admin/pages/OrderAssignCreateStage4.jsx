@@ -39,23 +39,23 @@ const OrderAssignCreateStage4 = () => {
     // Helper function to check if price was updated today
     const getTodaysMarketPrice = (product) => {
         if (!product?.price_date) return null;
-        
+
         try {
-            const priceData = typeof product.price_date === 'string' 
-                ? JSON.parse(product.price_date) 
+            const priceData = typeof product.price_date === 'string'
+                ? JSON.parse(product.price_date)
                 : product.price_date;
-            
+
             if (!Array.isArray(priceData)) return null;
-            
+
             const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
-            
+
             // Find today's price entry
             const todaysPrice = priceData.find(entry => {
                 if (!entry.date) return false;
                 const entryDate = new Date(entry.date).toISOString().split('T')[0];
                 return entryDate === today;
             });
-            
+
             return todaysPrice ? parseFloat(todaysPrice.price) : null;
         } catch (error) {
             console.error('Error parsing price_date:', error);
@@ -774,7 +774,7 @@ const OrderAssignCreateStage4 = () => {
         try {
             // Validate market prices on frontend
             const invalidPrices = productRows.filter(row => !row.marketPrice || row.marketPrice === 0);
-            
+
             if (invalidPrices.length > 0) {
                 const productNames = invalidPrices.map(p => p.product_name || p.product).join(', ');
                 alert(`Cannot submit Stage 4: Market prices are not updated for: ${productNames}. Please update product prices before proceeding.`);
@@ -795,12 +795,12 @@ const OrderAssignCreateStage4 = () => {
 
             const response = await updateStage4Assignment(id, stage4Data);
             //console.log('Stage 4 saved:', response);
-            
+
             alert('Stage 4 review completed successfully!');
             navigate('/order-assign');
         } catch (error) {
             console.error('Error saving stage 4:', error);
-            
+
             // Handle backend validation error
             if (error.message && error.message.includes('Market prices')) {
                 alert(error.message);
@@ -1347,8 +1347,11 @@ const OrderAssignCreateStage4 = () => {
                                                         }));
                                                     } else {
                                                         const updatedRows = [...productRows];
-                                                        updatedRows[row.displayIndex].price = newPrice;
-                                                        setProductRows(updatedRows);
+                                                        const rowIndex = updatedRows.findIndex(r => r.id === row.id);
+                                                        if (rowIndex !== -1) {
+                                                            updatedRows[rowIndex].price = newPrice;
+                                                            setProductRows(updatedRows);
+                                                        }
                                                     }
                                                 }}
                                                 className="w-28 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
