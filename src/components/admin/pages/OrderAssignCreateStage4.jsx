@@ -796,9 +796,7 @@ const OrderAssignCreateStage4 = () => {
             const response = await updateStage4Assignment(id, stage4Data);
             console.log('Stage 4 saved:', response);
             
-=======
 
->>>>>>> f2e373f77fb0d1340afd68d96dc151a1b8526d7e
             alert('Stage 4 review completed successfully!');
             navigate('/order-assign');
         } catch (error) {
