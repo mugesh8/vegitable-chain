@@ -77,7 +77,7 @@ const OrderAssignManagement = () => {
     if (!searchQuery) return true;
     const query = searchQuery.toLowerCase();
     return (
-      order.oid.toLowerCase().includes(query) ||
+      order.order_id.toLowerCase().includes(query) ||
       order.customer_name.toLowerCase().includes(query)
     );
   });
@@ -197,7 +197,7 @@ const OrderAssignManagement = () => {
               {filteredOrders.map((order, index) => (
                 <tr key={order.oid} className="hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className="text-sm font-medium text-gray-900">{order.oid}</span>
+                    <span className="text-sm font-medium text-gray-900">{order.order_id}</span>
                   </td>
                   <td className="px-6 py-4">
                     <div>
@@ -259,7 +259,7 @@ const OrderAssignManagement = () => {
                       // For flight orders, check if stage1 is completed
                       const shouldShowEdit = isLocalOrder ? hasLocalOrderData : isStage1Completed;
 
-                      console.log(`Order ${order.oid}: type=${order.order_type}, localOrderData=`, localOrderData, `hasLocalData=${hasLocalOrderData}, stage1=${isStage1Completed}, showEdit=${shouldShowEdit}`);
+                      //console.log(`Order ${order.oid}: type=${order.order_type}, localOrderData=`, localOrderData, `hasLocalData=${hasLocalOrderData}, stage1=${isStage1Completed}, showEdit=${shouldShowEdit}`);
 
                       if (shouldShowEdit) {
                         return (

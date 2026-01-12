@@ -97,7 +97,7 @@ const Airport = () => {
                 : 'bg-[#D4F4E8] text-[#0D5C4D] hover:bg-[#B8F4D8]'
             }`}
           >
-            Invoice Stock Management
+            Inventory Management
           </button>
           <button 
             onClick={() => navigate('/settings/inventory-company')}
@@ -148,6 +148,16 @@ const Airport = () => {
             }`}
           >
             Driver Rate
+          </button>
+          <button 
+            onClick={() => navigate('/settings/customers')}
+            className={`px-6 py-2.5 rounded-lg font-medium text-sm transition-colors ${
+              location.pathname === '/settings/customers' 
+                ? 'bg-[#0D7C66] text-white' 
+                : 'bg-[#D4F4E8] text-[#0D5C4D] hover:bg-[#B8F4D8]'
+            }`}
+          >
+            Customers
           </button>
           {/* <button 
             onClick={() => navigate('/settings/payout-formulas')}

@@ -393,7 +393,7 @@ const ThirdPartyManagement = () => {
         isOpen={deleteModal.isOpen}
         onClose={() => setDeleteModal({ isOpen: false, thirdPartyId: null, thirdPartyName: '' })}
         onConfirm={() => {
-          console.log('Deleting third party:', deleteModal.thirdPartyId);
+          //console.log('Deleting third party:', deleteModal.thirdPartyId);
           setDeleteModal({ isOpen: false, thirdPartyId: null, thirdPartyName: '' });
         }}
         title="Delete Third Party"

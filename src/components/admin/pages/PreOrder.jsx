@@ -397,7 +397,7 @@ const PreOrder = () => {
         summaryData: summaryData
       };
 
-      console.log('Saving Stage 1 with data:', JSON.stringify(stage1Data, null, 2));
+      //console.log('Saving Stage 1 with data:', JSON.stringify(stage1Data, null, 2));
 
       // Save to pre-order table
       const preOrderData = {

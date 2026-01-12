@@ -12,7 +12,7 @@ const PayoutFormulas = () => {
   const heavyOvertimeRate = (heavyRate * 1.5).toFixed(2);
 
   const handleSave = () => {
-    console.log('Saving payout formulas...', { normalRate, heavyRate });
+    //console.log('Saving payout formulas...', { normalRate, heavyRate });
     alert('Payout formulas saved successfully!');
   };
 

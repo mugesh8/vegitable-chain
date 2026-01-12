@@ -7,7 +7,7 @@ export const loginAdmin = async (email, password) => {
   });
 
   const data = await response.data;
-  console.log('Login response data:', data);
+  // console.log('Login response data:', data);
   if (!response.data.success) {
     throw new Error(data.message || 'Login failed');
   }

@@ -97,6 +97,7 @@ import PetrolBunkManagement from './components/admin/pages/PetrolBunkManagement'
 import LabourRateManagement from './components/admin/pages/LabourRateManagement'
 import DriverRateManagement from './components/admin/pages/DriverRateManagement'
 import InventoryCompany from './components/admin/pages/InventoryCompany'
+import AddCustomers from './components/admin/pages/AddCustomers'
 
 const App = () => {
   return (
@@ -199,6 +200,7 @@ const App = () => {
         <Route path="/settings/petroleum" element={<ProtectedRoute><Layout><PetrolBunkManagement /></Layout></ProtectedRoute>} />
         <Route path="/settings/labour-rate" element={<ProtectedRoute><Layout><LabourRateManagement /></Layout></ProtectedRoute>} />
         <Route path="/settings/driver-rate" element={<ProtectedRoute><Layout><DriverRateManagement /></Layout></ProtectedRoute>} />
+        <Route path="/settings/customers" element={<ProtectedRoute><Layout><AddCustomers /></Layout></ProtectedRoute>} />
         <Route path="/" element={localStorage.getItem('authToken') ? <Navigate to="/dashboard" replace /> : <Navigate to="/login" replace />} />
       </Routes>
     </Router>

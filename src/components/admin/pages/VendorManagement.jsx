@@ -447,7 +447,7 @@ const VendorDashboard = () => {
         isOpen={deleteModal.isOpen}
         onClose={() => setDeleteModal({ isOpen: false, vendor: null, vendorName: '' })}
         onConfirm={() => {
-          console.log('Deleting vendor:', deleteModal.vendor);
+          //console.log('Deleting vendor:', deleteModal.vendor);
           setDeleteModal({ isOpen: false, vendor: null, vendorName: '' });
         }}
         title="Delete Vendor"

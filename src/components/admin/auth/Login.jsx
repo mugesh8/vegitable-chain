@@ -71,7 +71,7 @@ const VeggiChainLogin = () => {
   };
 
   const handleForgotPassword = () => {
-    console.log('Forgot password clicked');
+    // console.log('Forgot password clicked');
     // Add forgot password logic here
   };
 

@@ -203,7 +203,7 @@ const OrderAssignCreateStage2 = () => {
               deliveryRoutes = typeof assignmentData.delivery_routes === 'string'
                 ? JSON.parse(assignmentData.delivery_routes)
                 : assignmentData.delivery_routes;
-              console.log('All delivery routes:', deliveryRoutes);
+              // console.log('All delivery routes:', deliveryRoutes);
             } catch (e) {
               console.error('Error parsing delivery_routes:', e);
             }
@@ -215,26 +215,26 @@ const OrderAssignCreateStage2 = () => {
             const matchingRoute = deliveryRoutes.find(route => {
               const routeOiid = String(route.oiid).split('-')[0]; // Extract base oiid
               const match = routeOiid == row.oiid && route.location === row.entityName;
-              console.log('Checking route:', route.oiid, route.location, 'vs row:', row.oiid, row.entityName, 'Match:', match);
+              // console.log('Checking route:', route.oiid, route.location, 'vs row:', row.oiid, row.entityName, 'Match:', match);
               return match;
             });
             if (matchingRoute) {
               // Handle labour field - it can be an array or a string
               if (matchingRoute.labours && Array.isArray(matchingRoute.labours)) {
                 row.labour = matchingRoute.labours;
-                console.log('Assigned labours array to row:', row.entityName, row.labour);
+                // console.log('Assigned labours array to row:', row.entityName, row.labour);
               } else if (matchingRoute.labour) {
                 // Check if labour is already an array
                 if (Array.isArray(matchingRoute.labour)) {
                   row.labour = matchingRoute.labour;
-                  console.log('Assigned labour array to row:', row.entityName, row.labour);
+                  // console.log('Assigned labour array to row:', row.entityName, row.labour);
                 } else if (typeof matchingRoute.labour === 'string' && matchingRoute.labour) {
                   row.labour = [matchingRoute.labour];
-                  console.log('Assigned labour string to row:', row.entityName, row.labour);
+                  // console.log('Assigned labour string to row:', row.entityName, row.labour);
                 }
               }
             } else {
-              console.log('No matching route for row:', row.oiid, row.entityName);
+              // console.log('No matching route for row:', row.oiid, row.entityName);
             }
           });
 
@@ -285,8 +285,8 @@ const OrderAssignCreateStage2 = () => {
                   });
                 });
 
-                console.log('Assignment map:', assignmentMap);
-                console.log('Individual labour data map:', individualLabourDataMap);
+                // console.log('Assignment map:', assignmentMap);
+                // console.log('Individual labour data map:', individualLabourDataMap);
 
                 // Load stage2_data for tape quantity and other data
                 let stage2Data = null;
@@ -512,7 +512,7 @@ const OrderAssignCreateStage2 = () => {
             </thead>
             <tbody>
               <tr>
-                <td className="px-4 py-3 text-sm text-left text-gray-900">{orderData?.oid || id}</td>
+                <td className="px-4 py-3 text-sm text-left text-gray-900">{orderData?.order_auto_id || id}</td>
                 <td className="px-4 py-3 text-sm text-left text-gray-900">{orderData?.customer_name || 'N/A'}</td>
                 <td className="px-4 py-3 text-sm text-left text-gray-900">{orderData?.items?.length || 0} Items</td>
                 <td className="px-4 py-3">
