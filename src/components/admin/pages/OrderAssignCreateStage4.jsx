@@ -399,7 +399,7 @@ const OrderAssignCreateStage4 = () => {
                                 row.entityType = firstAssignment.entityType || '';
                                 row.assignedQty = parseFloat(firstAssignment.assignedQty) || 0;
                                 row.assignedBoxes = parseInt(firstAssignment.assignedBoxes) || 0;
-                                row.price = parseFloat(firstAssignment.price) || 0;
+                                row.price = firstAssignment.price ?? 0;
                                 row.place = firstAssignment.place || '';
 
                                 // Find entity and set name using freshly fetched data
@@ -464,7 +464,7 @@ const OrderAssignCreateStage4 = () => {
                                             entityType: assignment.entityType || '',
                                             assignedQty: parseFloat(assignment.assignedQty) || 0,
                                             assignedBoxes: parseInt(assignment.assignedBoxes) || 0,
-                                            price: parseFloat(assignment.price) || 0,
+                                            price: assignment.price ?? 0,
                                             marketPrice: row.marketPrice,
                                             tapeColor: assignment.tapeColor || entity?.tape_color || '',
                                             place: assignment.place || ''
@@ -550,7 +550,7 @@ const OrderAssignCreateStage4 = () => {
         };
 
         loadAssignmentData();
-    }, [id, orderDetails]);
+    }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const initializeFromOrderItems = async () => {
         let items = [];
@@ -869,7 +869,7 @@ const OrderAssignCreateStage4 = () => {
                         marketPrice: data.marketPrice || row.marketPrice || 0,
                         assignedQty: assignedQty,
                         assignedBoxes: assignedBoxes,
-                        price: parseFloat(data.price) || 0,
+                        price: data.price ?? 0,
                         place: data.place || '',
                         canEdit: true,
                         displayIndex: index,
@@ -913,7 +913,7 @@ const OrderAssignCreateStage4 = () => {
                         marketPrice: remainingData.marketPrice || row.marketPrice || 0,
                         assignedQty: parseFloat(remainingData.assignedQty) || 0,
                         assignedBoxes: parseFloat(remainingData.assignedBoxes) || 0,
-                        price: parseFloat(remainingData.price) || 0,
+                        price: remainingData.price ?? 0,
                         place: remainingData.place || '',
                         canEdit: true,
                         displayIndex: index,
@@ -927,7 +927,7 @@ const OrderAssignCreateStage4 = () => {
         return displayRows;
     };
 
-    const displayRows = getDisplayRows();
+    const displayRows = React.useMemo(() => getDisplayRows(), [productRows, remainingRowAssignments, isBoxBasedOrder]);
 
     // Check if we have any routes with drivers assigned
     const hasAssignedDrivers = deliveryRoutes.some(route => route.driver);
@@ -1042,6 +1042,7 @@ const OrderAssignCreateStage4 = () => {
                                 {!isBoxBasedOrder && <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Picked Qty</th>}
                                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Market Price</th>
                                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Price</th>
+                                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Total Amount</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-200">
@@ -1337,7 +1338,7 @@ const OrderAssignCreateStage4 = () => {
                                             <input
                                                 type="number"
                                                 step="0.01"
-                                                value={row.price || ''}
+                                                value={row.price ?? ''}
                                                 placeholder="0.00"
                                                 onChange={(e) => {
                                                     const newPrice = e.target.value;
@@ -1347,16 +1348,32 @@ const OrderAssignCreateStage4 = () => {
                                                             [row.id]: { ...prev[row.id], price: newPrice }
                                                         }));
                                                     } else {
-                                                        const updatedRows = [...productRows];
-                                                        const rowIndex = updatedRows.findIndex(r => r.id === row.id);
-                                                        if (rowIndex !== -1) {
-                                                            updatedRows[rowIndex].price = newPrice;
-                                                            setProductRows(updatedRows);
-                                                        }
+                                                        setProductRows(prevRows => {
+                                                            const updatedRows = [...prevRows];
+                                                            const rowIndex = updatedRows.findIndex(r => r.id === row.id);
+                                                            if (rowIndex !== -1) {
+                                                                updatedRows[rowIndex] = {
+                                                                    ...updatedRows[rowIndex],
+                                                                    price: newPrice
+                                                                };
+                                                            }
+                                                            return updatedRows;
+                                                        });
                                                     }
                                                 }}
                                                 className="w-28 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
                                             />
+                                        </td>
+                                        <td className="px-4 py-4">
+                                            <div className="flex items-center">
+                                                <span className="text-sm font-bold text-emerald-600">
+                                                    ₹{(() => {
+                                                        const price = parseFloat(row.price) || 0;
+                                                        const weight = parseFloat(row.net_weight) || parseFloat(row.assignedQty) || 0;
+                                                        return (price * weight).toFixed(2);
+                                                    })()}
+                                                </span>
+                                            </div>
                                         </td>
                                     </tr>
                                 );
@@ -1644,6 +1661,68 @@ const OrderAssignCreateStage4 = () => {
                                             />
                                         </div>
                                     </div>
+
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-xs font-semibold text-gray-700 mb-1">Market Price</label>
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-sm font-semibold text-gray-900">
+                                                    {row.marketPrice > 0 ? `₹${row.marketPrice.toFixed(2)}` : '-'}
+                                                </span>
+                                                {row.marketPrice === 0 && (
+                                                    <span className="text-xs text-red-600 bg-red-50 px-2 py-1 rounded-full">
+                                                        Update price
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <label className="block text-xs font-semibold text-gray-700 mb-1">Price</label>
+                                            <input
+                                                type="number"
+                                                step="0.01"
+                                                value={row.price ?? ''}
+                                                placeholder="0.00"
+                                                onChange={(e) => {
+                                                    const newPrice = e.target.value;
+                                                    if (row.isRemaining) {
+                                                        setRemainingRowAssignments(prev => ({
+                                                            ...prev,
+                                                            [row.id]: { ...prev[row.id], price: newPrice }
+                                                        }));
+                                                    } else {
+                                                        setProductRows(prevRows => {
+                                                            const updatedRows = [...prevRows];
+                                                            const rowIndex = updatedRows.findIndex(r => r.id === row.id);
+                                                            if (rowIndex !== -1) {
+                                                                updatedRows[rowIndex] = {
+                                                                    ...updatedRows[rowIndex],
+                                                                    price: newPrice
+                                                                };
+                                                            }
+                                                            return updatedRows;
+                                                        });
+                                                    }
+                                                }}
+                                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* Total Amount Display */}
+                                    <div className="mt-3 pt-3 border-t border-gray-200">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-sm font-medium text-gray-700">Total Amount:</span>
+                                            <span className="text-lg font-bold text-emerald-600">
+                                                ₹{(() => {
+                                                    const price = parseFloat(row.price) || 0;
+                                                    const weight = parseFloat(row.net_weight) || parseFloat(row.assignedQty) || 0;
+                                                    return (price * weight).toFixed(2);
+                                                })()}
+                                            </span>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         );
@@ -1656,6 +1735,55 @@ const OrderAssignCreateStage4 = () => {
 
 
 
+
+
+
+            {/* Total Amount Section */}
+            <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl shadow-sm p-6 mb-6 border-2 border-emerald-200">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <h3 className="text-lg font-semibold text-gray-900 mb-1">Order Total Amount</h3>
+                        <p className="text-sm text-gray-600">Based on assigned prices and quantities</p>
+                    </div>
+                    <div className="text-right">
+                        <p className="text-sm text-gray-600 mb-1">Total Amount</p>
+                        <p className="text-3xl font-bold text-emerald-600">
+                            ₹{(() => {
+                                let total = 0;
+                                displayRows.forEach(row => {
+                                    const price = parseFloat(row.price) || 0;
+                                    // Use net_weight which contains the actual kg for both box and weight-based orders
+                                    const weight = parseFloat(row.net_weight) || parseFloat(row.assignedQty) || 0;
+                                    total += price * weight;
+                                });
+                                return total.toFixed(2);
+                            })()}
+                        </p>
+                    </div>
+                </div>
+
+                {/* Breakdown */}
+                <div className="mt-4 pt-4 border-t border-emerald-200">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="bg-white rounded-lg p-3">
+                            <p className="text-xs text-gray-500 mb-1">Total Items</p>
+                            <p className="text-lg font-semibold text-gray-900">{displayRows.length}</p>
+                        </div>
+                        <div className="bg-white rounded-lg p-3">
+                            <p className="text-xs text-gray-500 mb-1">Total Quantity</p>
+                            <p className="text-lg font-semibold text-gray-900">
+                                {(() => {
+                                    const totalKg = displayRows.reduce((sum, row) => {
+                                        const weight = parseFloat(row.net_weight) || parseFloat(row.assignedQty) || 0;
+                                        return sum + weight;
+                                    }, 0);
+                                    return `${totalKg.toFixed(2)} kg`;
+                                })()}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
             {/* Action Buttons */}
             <div className="flex flex-col sm:flex-row justify-between gap-3">

@@ -1,13 +1,15 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  Plus, 
+import {
+  Plus,
   MoreVertical,
-  ChevronDown
+  ChevronDown,
+  Download
 } from 'lucide-react';
-import { getAllLabours, deleteLabour } from '../../../api/labourApi';
+import { getAllLabours, deleteLabour, getLabourById } from '../../../api/labourApi';
 import ConfirmDeleteModal from '../../common/ConfirmDeleteModal';
 import { BASE_URL } from '../../../config/config';
+import * as XLSX from 'xlsx-js-style';
 
 const LabourManagement = () => {
   const navigate = useNavigate();
@@ -93,27 +95,27 @@ const LabourManagement = () => {
   const activeLabours = labours.filter(l => l.status === 'Present' || l.status === 'Active').length;
 
   const stats = [
-    { 
-      label: 'Total Labours', 
-      value: totalLabours.toString(), 
+    {
+      label: 'Total Labours',
+      value: totalLabours.toString(),
       color: 'bg-gradient-to-r from-[#D1FAE5] to-[#A7F3D0]',
       textColor: 'text-[#0D5C4D]'
     },
-    { 
-      label: 'Active Labours', 
-      value: activeLabours.toString(), 
+    {
+      label: 'Active Labours',
+      value: activeLabours.toString(),
       color: 'bg-gradient-to-r from-[#6EE7B7] to-[#34D399]',
       textColor: 'text-[#0D5C4D]'
     },
-    { 
-      label: 'Pending Payouts', 
-      value: '₹3.56 L', 
+    {
+      label: 'Pending Payouts',
+      value: '₹3.56 L',
       color: 'bg-gradient-to-r from-[#10B981] to-[#059669]',
       textColor: 'text-white'
     },
-    { 
-      label: 'Totally Paid(Month)', 
-      value: '₹15.6 L', 
+    {
+      label: 'Totally Paid(Month)',
+      value: '₹15.6 L',
       color: 'bg-gradient-to-r from-[#047857] to-[#065F46]',
       textColor: 'text-white'
     }
@@ -125,6 +127,130 @@ const LabourManagement = () => {
     setActiveTab(tab);
   };
 
+  // Export labours to Excel with all details
+  const handleExportLabours = async () => {
+    if (labours.length === 0) {
+      alert('No labours to export');
+      return;
+    }
+
+    try {
+      // Fetch detailed data for all labours
+      const detailedLabours = await Promise.all(
+        labours.map(async (labour) => {
+          try {
+            const response = await getLabourById(labour.id);
+            return response.data || response;
+          } catch (error) {
+            console.error(`Error fetching labour ${labour.id}:`, error);
+            return null;
+          }
+        })
+      );
+
+      // Filter out any failed fetches and prepare data for export
+      const exportData = detailedLabours
+        .filter(labour => labour !== null)
+        .map(labour => ({
+          // Personal Information
+          'NAME': labour.full_name || 'N/A',
+          'PHONE': labour.mobile_number || 'N/A',
+          'AADHAAR NUMBER': labour.aadhaar_number || 'N/A',
+          'DATE OF BIRTH': labour.date_of_birth || 'N/A',
+          'GENDER': labour.gender || 'N/A',
+          'BLOOD GROUP': labour.blood_group || 'N/A',
+          'ADDRESS': labour.address || 'N/A',
+
+          // Work Details
+          'WORK TYPE': labour.work_type || 'N/A',
+          'DEPARTMENT': labour.department || 'N/A',
+          'DAILY WAGE': labour.daily_wage ? `₹${labour.daily_wage}` : 'N/A',
+          'JOINING DATE': labour.joining_date || 'N/A',
+          'STATUS': labour.status || 'N/A'
+        }));
+
+      if (exportData.length === 0) {
+        alert('No labour data available to export');
+        return;
+      }
+
+      // Create worksheet
+      const worksheet = XLSX.utils.json_to_sheet(exportData);
+
+      // Set column widths
+      worksheet['!cols'] = [
+        { wch: 25 }, // NAME
+        { wch: 15 }, // PHONE
+        { wch: 18 }, // AADHAAR NUMBER
+        { wch: 15 }, // DATE OF BIRTH
+        { wch: 10 }, // GENDER
+        { wch: 12 }, // BLOOD GROUP
+        { wch: 35 }, // ADDRESS
+        { wch: 15 }, // WORK TYPE
+        { wch: 15 }, // DEPARTMENT
+        { wch: 12 }, // DAILY WAGE
+        { wch: 15 }, // JOINING DATE
+        { wch: 12 }  // STATUS
+      ];
+
+      // Get the range of cells
+      const range = XLSX.utils.decode_range(worksheet['!ref']);
+      const numCols = range.e.c + 1;
+
+      // Style header row
+      const headerCells = [];
+      for (let C = 0; C < numCols; C++) {
+        headerCells.push(XLSX.utils.encode_cell({ r: 0, c: C }));
+      }
+
+      headerCells.forEach(cell => {
+        if (worksheet[cell]) {
+          worksheet[cell].s = {
+            font: { bold: true, sz: 11, name: "Calibri", color: { rgb: "FFFFFF" } },
+            fill: { fgColor: { rgb: "4472C4" } },
+            alignment: { horizontal: "center", vertical: "center" },
+            border: {
+              top: { style: "thin", color: { rgb: "000000" } },
+              bottom: { style: "thin", color: { rgb: "000000" } },
+              left: { style: "thin", color: { rgb: "000000" } },
+              right: { style: "thin", color: { rgb: "000000" } }
+            }
+          };
+        }
+      });
+
+      // Style data rows
+      for (let R = 1; R <= range.e.r; ++R) {
+        for (let C = 0; C < numCols; ++C) {
+          const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+          if (worksheet[cellAddress]) {
+            worksheet[cellAddress].s = {
+              font: { sz: 11, name: "Calibri" },
+              alignment: { horizontal: "center", vertical: "center" },
+              border: {
+                top: { style: "thin", color: { rgb: "000000" } },
+                bottom: { style: "thin", color: { rgb: "000000" } },
+                left: { style: "thin", color: { rgb: "000000" } },
+                right: { style: "thin", color: { rgb: "000000" } }
+              }
+            };
+          }
+        }
+      }
+
+      // Create workbook and add worksheet
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Labours');
+
+      // Generate Excel file and trigger download
+      const fileName = `labours_detailed_${new Date().toISOString().split('T')[0]}.xlsx`;
+      XLSX.writeFile(workbook, fileName, { bookType: 'xlsx', cellStyles: true });
+    } catch (error) {
+      console.error('Error exporting labours:', error);
+      alert('Failed to export labour data. Please try again.');
+    }
+  };
+
   return (
     <div className="p-4 sm:p-6 lg:p-8">
 
@@ -133,11 +259,10 @@ const LabourManagement = () => {
         <div className="flex flex-wrap gap-2">
           <button
             onClick={() => handleTabChange('labourList')}
-            className={`px-6 py-2.5 rounded-lg font-medium text-sm transition-colors ${
-              activeTab === 'labourList'
+            className={`px-6 py-2.5 rounded-lg font-medium text-sm transition-colors ${activeTab === 'labourList'
                 ? 'bg-[#0D7C66] text-white'
                 : 'bg-[#D4F4E8] text-[#0D5C4D] hover:bg-[#B8F4D8]'
-            }`}
+              }`}
           >
             Labour List
           </button>
@@ -161,20 +286,29 @@ const LabourManagement = () => {
           </button>
         </div>
 
-        <button 
-          onClick={() => navigate('/labour/add')}
-          className="bg-[#0D7C66] hover:bg-[#0a6354] text-white px-4 sm:px-6 py-2.5 rounded-lg font-medium text-sm flex items-center gap-2 transition-colors shadow-sm"
-        >
-          <Plus className="w-4 h-4" />
-          Add Labour
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={handleExportLabours}
+            className="bg-[#1DB890] hover:bg-[#19a57e] text-white px-4 sm:px-6 py-2.5 rounded-lg font-medium text-sm flex items-center gap-2 transition-colors shadow-sm"
+          >
+            <Download className="w-4 h-4" />
+            Export Excel
+          </button>
+          <button
+            onClick={() => navigate('/labour/add')}
+            className="bg-[#0D7C66] hover:bg-[#0a6354] text-white px-4 sm:px-6 py-2.5 rounded-lg font-medium text-sm flex items-center gap-2 transition-colors shadow-sm"
+          >
+            <Plus className="w-4 h-4" />
+            Add Labour
+          </button>
+        </div>
       </div>
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         {stats.map((stat, index) => (
-          <div 
-            key={index} 
+          <div
+            key={index}
             className={`${stat.color} rounded-2xl p-6 ${stat.textColor}`}
           >
             <div className="text-sm font-medium mb-2 opacity-90">{stat.label}</div>
@@ -187,13 +321,13 @@ const LabourManagement = () => {
       <div className="bg-white rounded-xl p-4 mb-6 border border-[#D0E0DB]">
         <div className="flex flex-wrap items-center gap-4">
           <span className="text-sm text-[#6B8782] font-medium">Filter by:</span>
-          
+
           <div className="flex flex-wrap gap-3">
             {/* Status Filter */}
             <div className="relative">
               <select
                 value={filters.status}
-                onChange={(e) => setFilters({...filters, status: e.target.value})}
+                onChange={(e) => setFilters({ ...filters, status: e.target.value })}
                 className="appearance-none bg-white border border-[#D0E0DB] rounded-lg px-4 py-2 pr-10 text-sm text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568] cursor-pointer"
               >
                 <option value="All">Status: All</option>
@@ -208,7 +342,7 @@ const LabourManagement = () => {
             <div className="relative">
               <select
                 value={filters.workType}
-                onChange={(e) => setFilters({...filters, workType: e.target.value})}
+                onChange={(e) => setFilters({ ...filters, workType: e.target.value })}
                 className="appearance-none bg-white border border-[#D0E0DB] rounded-lg px-4 py-2 pr-10 text-sm text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568] cursor-pointer"
               >
                 <option value="All">Work Type: All</option>
@@ -223,7 +357,7 @@ const LabourManagement = () => {
             <div className="relative">
               <select
                 value={filters.location}
-                onChange={(e) => setFilters({...filters, location: e.target.value})}
+                onChange={(e) => setFilters({ ...filters, location: e.target.value })}
                 className="appearance-none bg-white border border-[#D0E0DB] rounded-lg px-4 py-2 pr-10 text-sm text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568] cursor-pointer"
               >
                 <option value="All">Location: All</option>
@@ -265,11 +399,10 @@ const LabourManagement = () => {
                   </td>
                 </tr>
               ) : labours.map((labour, index) => (
-                <tr 
-                  key={labour.id} 
-                  className={`border-b border-[#D0E0DB] hover:bg-[#F0F4F3] transition-colors ${
-                    index % 2 === 0 ? 'bg-white' : 'bg-[#F0F4F3]/30'
-                  }`}
+                <tr
+                  key={labour.id}
+                  className={`border-b border-[#D0E0DB] hover:bg-[#F0F4F3] transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-[#F0F4F3]/30'
+                    }`}
                 >
                   <td className="px-4 sm:px-6 py-4">
                     <div className="flex items-center gap-3">
@@ -313,7 +446,7 @@ const LabourManagement = () => {
                   </td>
 
                   <td className="px-4 sm:px-6 py-4">
-                    <button 
+                    <button
                       onClick={(e) => {
                         e.stopPropagation();
                         toggleDropdown(labour.id, e);
@@ -362,12 +495,12 @@ const LabourManagement = () => {
 
       {/* Dropdown Menu - Fixed Position Outside Table */}
       {openDropdown && (
-        <div 
+        <div
           ref={dropdownRef}
           className="fixed w-32 bg-white rounded-lg shadow-lg border border-[#D0E0DB] py-1 z-[100]"
-          style={{ 
-            top: `${dropdownPosition.top}px`, 
-            left: `${dropdownPosition.left}px` 
+          style={{
+            top: `${dropdownPosition.top}px`,
+            left: `${dropdownPosition.left}px`
           }}
         >
           <button

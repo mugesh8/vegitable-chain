@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { ChevronDown, Edit2, X, MapPin, Check, Package, Truck, User } from 'lucide-react';
 import { getAssignmentOptions, updateStage1Assignment, getOrderAssignment } from '../../../api/orderAssignmentApi';
@@ -18,6 +18,7 @@ const OrderAssignCreateStage1 = () => {
   const location = useLocation();
   const { id } = useParams();
   const orderData = location.state?.orderData;
+  const hasLoadedData = useRef(false); // Track if data has been loaded to prevent infinite loop
   const [assignmentOptions, setAssignmentOptions] = useState({
     farmers: [],
     suppliers: [],
@@ -89,6 +90,11 @@ const OrderAssignCreateStage1 = () => {
       setIsBoxBasedOrder(hasBoxes);
     }
   }, [orderDetails]);
+
+  // Reset hasLoadedData when order ID changes
+  useEffect(() => {
+    hasLoadedData.current = false;
+  }, [id]);
 
   // Helper function to create delivery route for an assignment
   const createDeliveryRoute = (entity, entityType, row, assignedQty, isRemaining = false) => {
@@ -168,6 +174,11 @@ const OrderAssignCreateStage1 = () => {
 
   // Load assignment options and existing assignment data
   useEffect(() => {
+    // Prevent infinite loop by checking if data has already been loaded for this order
+    if (hasLoadedData.current) {
+      return;
+    }
+
     const loadAssignmentData = async () => {
       try {
         if (!orderDetails) {
@@ -253,6 +264,7 @@ const OrderAssignCreateStage1 = () => {
             items = orderDetails.items;
           } else {
             console.warn('No order items found for assignment');
+            hasLoadedData.current = true; // Mark as loaded even if no items
             return;
           }
 
@@ -461,18 +473,24 @@ const OrderAssignCreateStage1 = () => {
             }
             setAssignmentStatuses(loadedStatuses);
           }
+
+          // Mark as loaded after successful data load
+          hasLoadedData.current = true;
         } catch (assignmentError) {
           console.error('Error loading assignment data:', assignmentError);
           await initializeFromOrderItems();
+          hasLoadedData.current = true; // Mark as loaded even on error
         }
       } catch (error) {
         console.error('Error loading assignment data:', error);
         await initializeFromOrderItems();
+        hasLoadedData.current = true; // Mark as loaded even on error
       }
     };
 
     loadAssignmentData();
-  }, [id, orderDetails]);
+  }, [id]); // Only depend on 'id', not 'orderDetails'
+
 
   const initializeFromOrderItems = async () => {
     let items = [];

@@ -1,20 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronDown, ArrowLeft, Search } from 'lucide-react';
+import { ChevronDown, ArrowLeft, Search, Download, FileDown } from 'lucide-react';
 import { getAllOrders } from '../../../api/orderApi';
 import { getOrderAssignment } from '../../../api/orderAssignmentApi';
 import { getAllFarmers } from '../../../api/farmerApi';
 import { getAllSuppliers } from '../../../api/supplierApi';
 import { getAllThirdParties } from '../../../api/thirdPartyApi';
 import { getAllDrivers } from '../../../api/driverApi';
-import * as XLSX from 'xlsx';
+import * as XLSX from 'xlsx-js-style';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 
 const ReportFarmer = () => {
   const navigate = useNavigate();
   const [currentPage, setCurrentPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
-  const [timeFilter, setTimeFilter] = useState('All Time');
-  const [statusFilter, setStatusFilter] = useState('All Status');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
 
   // Real data states
   const [allOrders, setAllOrders] = useState([]);
@@ -111,7 +113,7 @@ const ReportFarmer = () => {
             return {
               farmerId,
               farmerName: farmer?.farmer_name || 'Unknown',
-              farmerPhone: farmer?.phone_number || 'N/A',
+              farmerPhone: farmer?.phone || 'N/A',
               amount: totalAmount,
               assignments: farmerAssignments
             };
@@ -166,62 +168,332 @@ const ReportFarmer = () => {
 
   const stats = calculateStats();
 
-  // Export to Excel function
-  const handleExport = () => {
-    // Flatten the data for export
+  // Clean product name - remove leading numbers like "1 - " and Tamil characters
+  const cleanProductName = (name) => {
+    if (!name) return '';
+    return name
+      .replace(/^\d+\s*-\s*/, '') // Remove leading numbers
+      .replace(/[\u0B80-\u0BFF]/g, '') // Remove Tamil characters
+      .replace(/\(\s*\)/g, '') // Remove empty parentheses
+      .replace(/\s+/g, ' ') // Normalize spaces
+      .trim();
+  };
+
+  // Filter data based on date range and search
+  const filteredData = React.useMemo(() => {
     const flattenedData = [];
     orderHistoryData.forEach(({ order, farmerData }) => {
       farmerData.forEach(farmer => {
-        const orderDate = order.createdAt ? new Date(order.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: '2-digit' }) : 'N/A';
-        const products = order.items || [];
-        const productNames = products.map(p => p.product_name || p.product).join(', ');
-        const paymentStatus = order.payment_status === 'paid' || order.payment_status === 'completed' ? 'Paid' : 'Unpaid';
-
-        flattenedData.push({
-          'Order ID': order.oid,
-          'Farmer ID': farmer.farmerId,
-          'Farmer Name': farmer.farmerName,
-          'Products': productNames,
-          'Order Date': orderDate,
-          'Amount': farmer.amount,
-          'Payment Status': paymentStatus,
-          'Customer Name': order.customer_name || 'N/A',
-          'Phone Number': order.phone_number || 'N/A'
-        });
+        flattenedData.push({ order, farmer });
       });
     });
 
-    if (flattenedData.length === 0) {
+    return flattenedData.filter(({ order, farmer }) => {
+      // Date filter
+      if (fromDate || toDate) {
+        const orderDate = new Date(order.createdAt);
+        if (fromDate && orderDate < new Date(fromDate)) return false;
+        if (toDate) {
+          const toDateTime = new Date(toDate);
+          toDateTime.setHours(23, 59, 59, 999);
+          if (orderDate > toDateTime) return false;
+        }
+      }
+
+      // Search filter
+      if (searchTerm) {
+        const query = searchTerm.toLowerCase();
+        return (
+          order.oid.toString().includes(query) ||
+          farmer.farmerName.toLowerCase().includes(query) ||
+          farmer.farmerId.toString().includes(query)
+        );
+      }
+
+      return true;
+    });
+  }, [orderHistoryData, fromDate, toDate, searchTerm]);
+
+  // Export filtered data to Excel
+  const handleExportExcel = () => {
+    if (filteredData.length === 0) {
       alert('No data to export');
       return;
     }
 
-    // Create worksheet from data
-    const worksheet = XLSX.utils.json_to_sheet(flattenedData);
+    const exportData = filteredData.map(({ order, farmer }) => {
+      const orderDate = order.createdAt ? new Date(order.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: '2-digit' }) : 'N/A';
+      const products = order.items || [];
+      const productNames = products.map(p => cleanProductName(p.product_name || p.product)).join(', ');
+      const paymentStatus = order.payment_status === 'paid' || order.payment_status === 'completed' ? 'Paid' : 'Unpaid';
 
-    // Auto-size columns
-    const columnWidths = [];
-    const headers = Object.keys(flattenedData[0]);
-
-    headers.forEach((header, idx) => {
-      let maxWidth = header.length;
-      flattenedData.forEach(row => {
-        const value = String(row[header] || '');
-        maxWidth = Math.max(maxWidth, value.length);
-      });
-      // Add some padding and cap at 50 characters
-      columnWidths.push({ wch: Math.min(maxWidth + 2, 50) });
+      return {
+        'Order ID': order.oid,
+        'Farmer ID': farmer.farmerId,
+        'Farmer Name': farmer.farmerName,
+        'Phone Number': farmer.farmerPhone,
+        'Products': productNames,
+        'Order Date': orderDate,
+        'Amount': farmer.amount.toFixed(2),
+        'Payment Status': paymentStatus
+      };
     });
 
-    worksheet['!cols'] = columnWidths;
-
-    // Create workbook and add worksheet
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    worksheet['!cols'] = [{ wch: 10 }, { wch: 10 }, { wch: 20 }, { wch: 15 }, { wch: 30 }, { wch: 12 }, { wch: 12 }, { wch: 12 }];
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Farmer Order History');
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Farmer Orders');
+    XLSX.writeFile(workbook, `Farmer_Orders_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
 
-    // Generate Excel file and trigger download
-    const fileName = `farmer_order_history_${new Date().toISOString().split('T')[0]}.xlsx`;
-    XLSX.writeFile(workbook, fileName);
+  // Export filtered data to PDF
+  const handleExportPDF = () => {
+    if (filteredData.length === 0) {
+      alert('No data to export');
+      return;
+    }
+
+    const doc = new jsPDF();
+    doc.setFontSize(16);
+    doc.text('Farmer Orders Report', 105, 15, { align: 'center' });
+
+    const tableData = filteredData.map(({ order, farmer }) => {
+      const orderDate = order.createdAt ? new Date(order.createdAt).toLocaleDateString('en-GB') : 'N/A';
+      const products = order.items || [];
+      const productNames = products.map(p => cleanProductName(p.product_name || p.product)).join(', ');
+      const paymentStatus = order.payment_status === 'paid' || order.payment_status === 'completed' ? 'Paid' : 'Unpaid';
+
+      return [
+        order.oid,
+        farmer.farmerName,
+        productNames,
+        orderDate,
+        farmer.amount.toFixed(2),
+        paymentStatus
+      ];
+    });
+
+    doc.autoTable({
+      startY: 25,
+      head: [['Order ID', 'Farmer', 'Products', 'Date', 'Amount', 'Status']],
+      body: tableData,
+      theme: 'grid',
+      headStyles: { fillColor: [68, 114, 196] },
+      columnStyles: {
+        0: { cellWidth: 20 },
+        1: { cellWidth: 30 },
+        2: { cellWidth: 60 },
+        3: { cellWidth: 25 },
+        4: { cellWidth: 25 },
+        5: { cellWidth: 20 }
+      },
+      styles: {
+        cellPadding: 2,
+        fontSize: 8
+      }
+    });
+
+    doc.save(`Farmer_Orders_${new Date().toISOString().split('T')[0]}.pdf`);
+  };
+
+  // Export individual farmer data to Excel
+  const handleExportFarmer = (farmerId, farmerName) => {
+    // Filter data for the specific farmer
+    const farmerOrders = [];
+    orderHistoryData.forEach(({ order, farmerData }) => {
+      const farmerInfo = farmerData.find(f => f.farmerId == farmerId);
+      if (farmerInfo) {
+        farmerOrders.push({ order, farmerInfo });
+      }
+    });
+
+    if (farmerOrders.length === 0) {
+      alert('No orders found for this farmer');
+      return;
+    }
+
+    // Create workbook
+    const workbook = XLSX.utils.book_new();
+    const wsData = [];
+
+    // Calculate total amount
+    let totalAmount = 0;
+    farmerOrders.forEach(({ farmerInfo }) => {
+      farmerInfo.assignments.forEach((assignment) => {
+        const boxes = parseInt(assignment.assignedBoxes) || 0;
+        const qty = parseFloat(assignment.assignedQty) || 0;
+        const displayQty = boxes > 0 ? boxes : qty;
+        const price = parseFloat(assignment.price) || 0;
+        totalAmount += displayQty * price;
+      });
+    });
+
+    // Header Section (Row 1)
+    wsData.push(['BILL TO:', '', 'BILLING COUNTS', farmerOrders.length, '', '', '', '', '', '₹', totalAmount]);
+
+    // Farmer Name Section (Rows 2-7)
+    wsData.push([farmerName.toUpperCase()]);
+    wsData.push(['#N/A']);
+    wsData.push(['#N/A']);
+    wsData.push(['#N/A']);
+    wsData.push(['#N/A']);
+    wsData.push(['#N/A']);
+    wsData.push(['#N/A']);
+
+    // Table Header (Row 8)
+    wsData.push(['S.NO', 'DATE', 'PRODUCT', 'UNIT', 'KGS', 'PRICE', 'AMOUNT', 'PAID', 'O/S', 'REMARKS']);
+
+    // Data rows
+    let serialNo = 1;
+    farmerOrders.forEach(({ order, farmerInfo }) => {
+      const orderDate = order.createdAt ? new Date(order.createdAt).toLocaleDateString('en-GB') : 'N/A';
+
+      farmerInfo.assignments.forEach((assignment) => {
+        const boxes = parseInt(assignment.assignedBoxes) || 0;
+        const qty = parseFloat(assignment.assignedQty) || 0;
+        const displayQty = boxes > 0 ? boxes : qty;
+        const price = parseFloat(assignment.price) || 0;
+        const amount = displayQty * price;
+        const isPaid = order.payment_status === 'paid' || order.payment_status === 'completed';
+        const paid = isPaid ? amount : 0;
+        const outstanding = isPaid ? 0 : amount;
+        const unit = boxes > 0 ? `BOX ${boxes}` : 'STOCK';
+
+        // Clean product name - remove box/bag information
+        let productName = (assignment.product || 'N/A').toUpperCase();
+        productName = productName.replace(/\s*BOX\s*\d+/gi, '').replace(/\s*\d+KG/gi, '').trim();
+
+        wsData.push([
+          serialNo,
+          orderDate,
+          productName,
+          unit,
+          displayQty,
+          price || 0,
+          amount || 0,
+          paid || 0,
+          outstanding || 0,
+          ''
+        ]);
+        serialNo++;
+      });
+    });
+
+    // Create worksheet
+    const worksheet = XLSX.utils.aoa_to_sheet(wsData);
+    worksheet['!cols'] = [
+      { wch: 8 }, { wch: 12 }, { wch: 25 }, { wch: 10 }, { wch: 8 },
+      { wch: 10 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 15 }
+    ];
+
+    // Merge cells
+    if (!worksheet['!merges']) worksheet['!merges'] = [];
+    worksheet['!merges'].push({ s: { r: 0, c: 0 }, e: { r: 0, c: 1 } });
+    worksheet['!merges'].push({ s: { r: 1, c: 0 }, e: { r: 1, c: 8 } });
+
+    // Apply styling - Exact colors from Excel template
+    const range = XLSX.utils.decode_range(worksheet['!ref']);
+
+    // Style header row (Row 1) - Light blue background (#B4C7E7)
+    ['A1', 'B1', 'C1', 'D1'].forEach(cell => {
+      if (worksheet[cell]) {
+        worksheet[cell].s = {
+          font: { bold: true, sz: 11, name: "Calibri" },
+          fill: { fgColor: { rgb: "B4C7E7" } },
+          alignment: { horizontal: "center", vertical: "center" },
+          border: {
+            top: { style: "thin", color: { rgb: "000000" } },
+            bottom: { style: "thin", color: { rgb: "000000" } },
+            left: { style: "thin", color: { rgb: "000000" } },
+            right: { style: "thin", color: { rgb: "000000" } }
+          }
+        };
+      }
+    });
+
+    // Style rupee symbol (J1) - Orange/Yellow background (#FFC000)
+    if (worksheet['J1']) {
+      worksheet['J1'].s = {
+        font: { bold: true, sz: 16, name: "Calibri" },
+        fill: { fgColor: { rgb: "FFC000" } },
+        alignment: { horizontal: "center", vertical: "center" },
+        border: {
+          top: { style: "thin", color: { rgb: "000000" } },
+          bottom: { style: "thin", color: { rgb: "000000" } },
+          left: { style: "thin", color: { rgb: "000000" } },
+          right: { style: "thin", color: { rgb: "000000" } }
+        }
+      };
+    }
+
+    // Style total amount (K1) - Dark red background (#C00000) with white text
+    if (worksheet['K1']) {
+      worksheet['K1'].s = {
+        font: { bold: true, sz: 16, color: { rgb: "FFFFFF" }, name: "Calibri" },
+        fill: { fgColor: { rgb: "C00000" } },
+        alignment: { horizontal: "center", vertical: "center" },
+        border: {
+          top: { style: "thin", color: { rgb: "000000" } },
+          bottom: { style: "thin", color: { rgb: "000000" } },
+          left: { style: "thin", color: { rgb: "000000" } },
+          right: { style: "thin", color: { rgb: "000000" } }
+        }
+      };
+    }
+
+    // Style farmer name (A2) - Bold text
+    if (worksheet['A2']) {
+      worksheet['A2'].s = {
+        font: { bold: true, sz: 11, name: "Calibri" },
+        alignment: { horizontal: "left", vertical: "center" }
+      };
+    }
+
+    // Style table headers (Row 8) - Light gray background (#D9D9D9)
+    const headerCols = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
+    headerCols.forEach(col => {
+      const cell = `${col}8`;
+      if (worksheet[cell]) {
+        worksheet[cell].s = {
+          font: { bold: true, sz: 10, name: "Calibri" },
+          fill: { fgColor: { rgb: "D9D9D9" } },
+          alignment: { horizontal: "center", vertical: "center" },
+          border: {
+            top: { style: "thin", color: { rgb: "000000" } },
+            bottom: { style: "thin", color: { rgb: "000000" } },
+            left: { style: "thin", color: { rgb: "000000" } },
+            right: { style: "thin", color: { rgb: "000000" } }
+          }
+        };
+      }
+    });
+
+    // Style data rows (from row 9 onwards)
+    for (let R = 8; R <= range.e.r; ++R) {
+      for (let C = 0; C <= 9; ++C) {
+        const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+        if (worksheet[cellAddress]) {
+          const isOutstandingCol = C === 8; // Column I (O/S)
+          const hasOutstanding = worksheet[cellAddress].v > 0;
+
+          worksheet[cellAddress].s = {
+            font: { sz: 10, name: "Calibri" },
+            alignment: { horizontal: "center", vertical: "center" },
+            border: {
+              top: { style: "thin", color: { rgb: "000000" } },
+              bottom: { style: "thin", color: { rgb: "000000" } },
+              left: { style: "thin", color: { rgb: "000000" } },
+              right: { style: "thin", color: { rgb: "000000" } }
+            },
+            fill: isOutstandingCol && hasOutstanding ? { fgColor: { rgb: "C6E0B4" } } : undefined
+          };
+        }
+      }
+    }
+
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Farmer Bill');
+    const fileName = `${farmerName.replace(/\s+/g, '_')}_bill_${new Date().toISOString().split('T')[0]}.xlsx`;
+    XLSX.writeFile(workbook, fileName, { bookType: 'xlsx', cellStyles: true });
   };
 
   return (
@@ -235,47 +507,54 @@ const ReportFarmer = () => {
         <h1 className="text-2xl font-bold text-[#0D5C4D]">Farmer Order History</h1>
       </div>
 
-      {/* Search and Filters */}
-      <div className="flex flex-col sm:flex-row gap-4 mb-6">
-        <div className="flex-1 relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-          <input
-            type="text"
-            placeholder="Search by order ID, farmer name..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent"
-          />
+      {/* Filters */}
+      <div className="bg-white rounded-2xl p-6 mb-6 border border-[#D0E0DB]">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-[#0D5C4D] mb-2">From Date</label>
+            <input
+              type="date"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              className="w-full px-3 py-2 border border-[#D0E0DB] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D8568]"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-[#0D5C4D] mb-2">To Date</label>
+            <input
+              type="date"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              className="w-full px-3 py-2 border border-[#D0E0DB] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D8568]"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-[#0D5C4D] mb-2">Search</label>
+            <input
+              type="text"
+              placeholder="Order ID or Farmer"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full px-3 py-2 border border-[#D0E0DB] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D8568]"
+            />
+          </div>
+          <div className="flex items-end gap-2 md:col-span-2">
+            <button
+              onClick={handleExportExcel}
+              className="flex-1 px-4 py-2 bg-[#10B981] text-white rounded-lg hover:bg-[#059669] transition-colors flex items-center justify-center gap-2"
+            >
+              <Download size={16} />
+              Excel
+            </button>
+            <button
+              onClick={handleExportPDF}
+              className="flex-1 px-4 py-2 bg-[#3B82F6] text-white rounded-lg hover:bg-[#2563EB] transition-colors flex items-center justify-center gap-2"
+            >
+              <FileDown size={16} />
+              PDF
+            </button>
+          </div>
         </div>
-        <div className="relative">
-          <select
-            value={timeFilter}
-            onChange={(e) => setTimeFilter(e.target.value)}
-            className="appearance-none px-4 py-2.5 pr-10 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent cursor-pointer min-w-[140px]"
-          >
-            <option>All Time</option>
-            <option>Today</option>
-            <option>This Week</option>
-            <option>This Month</option>
-            <option>Last Month</option>
-          </select>
-          <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none" />
-        </div>
-        <div className="relative">
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="appearance-none px-4 py-2.5 pr-10 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent cursor-pointer min-w-[140px]"
-          >
-            <option>All Status</option>
-            <option>Paid</option>
-            <option>Unpaid</option>
-          </select>
-          <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none" />
-        </div>
-        <button onClick={handleExport} className="px-6 py-2.5 bg-[#1DB890] hover:bg-[#19a57e] text-white font-semibold rounded-lg text-sm transition-colors whitespace-nowrap">
-          Export CSV
-        </button>
       </div>
 
       {/* Summary Cards */}
@@ -334,23 +613,12 @@ const ReportFarmer = () => {
                   </td>
                 </tr>
               ) : (() => {
-                // Flatten the data: create one row per farmer per order
-                const flattenedData = [];
-                orderHistoryData.forEach(({ order, farmerData }) => {
-                  farmerData.forEach(farmer => {
-                    flattenedData.push({
-                      order,
-                      farmer
-                    });
-                  });
-                });
-
                 // Pagination
                 const itemsPerPage = 7;
-                const totalPages = Math.ceil(flattenedData.length / itemsPerPage);
+                const totalPages = Math.ceil(filteredData.length / itemsPerPage);
                 const startIndex = (currentPage - 1) * itemsPerPage;
                 const endIndex = startIndex + itemsPerPage;
-                const currentData = flattenedData.slice(startIndex, endIndex);
+                const currentData = filteredData.slice(startIndex, endIndex);
 
                 return currentData.map((item, index) => {
                   const { order, farmer } = item;
@@ -385,7 +653,7 @@ const ReportFarmer = () => {
                               key={idx}
                               className="px-3 py-1.5 rounded-full text-xs font-medium bg-[#D4F4E8] text-[#047857]"
                             >
-                              {product.product_name || product.product}
+                              {cleanProductName(product.product_name || product.product)}
                             </span>
                           ))}
                           {remainingCount > 0 && (
@@ -425,6 +693,12 @@ const ReportFarmer = () => {
                           >
                             View
                           </button>
+                          <button
+                            onClick={() => handleExportFarmer(farmer.farmerId, farmer.farmerName)}
+                            className="px-4 py-2 bg-[#1DB890] hover:bg-[#19a57e] text-white font-semibold rounded-lg text-xs transition-colors"
+                          >
+                            Export
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -439,16 +713,8 @@ const ReportFarmer = () => {
         <div className="flex items-center justify-between px-6 py-4 bg-[#F0F4F3] border-t border-[#D0E0DB]">
           <div className="text-sm text-[#6B8782]">
             {(() => {
-              // Flatten the data to count total items
-              const flattenedData = [];
-              orderHistoryData.forEach(({ order, farmerData }) => {
-                farmerData.forEach(farmer => {
-                  flattenedData.push({ order, farmer });
-                });
-              });
-
               const itemsPerPage = 7;
-              const totalItems = flattenedData.length;
+              const totalItems = filteredData.length;
               const startItem = totalItems === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1;
               const endItem = Math.min(currentPage * itemsPerPage, totalItems);
               return `Showing ${startItem}-${endItem} of ${totalItems} entries`;
@@ -456,16 +722,8 @@ const ReportFarmer = () => {
           </div>
           <div className="flex items-center gap-2">
             {(() => {
-              // Flatten the data for pagination
-              const flattenedData = [];
-              orderHistoryData.forEach(({ order, farmerData }) => {
-                farmerData.forEach(farmer => {
-                  flattenedData.push({ order, farmer });
-                });
-              });
-
               const itemsPerPage = 7;
-              const totalPages = Math.ceil(flattenedData.length / itemsPerPage);
+              const totalPages = Math.ceil(filteredData.length / itemsPerPage);
 
               return (
                 <>

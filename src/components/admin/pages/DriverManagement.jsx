@@ -1,18 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  Search, 
-  ChevronDown, 
-  Plus, 
-  ChevronLeft, 
-  ChevronRight, 
+import {
+  Search,
+  ChevronDown,
+  Plus,
+  ChevronLeft,
+  ChevronRight,
   MoreVertical,
   Eye,
   Edit,
-  Trash2
+  Trash2,
+  Download
 } from 'lucide-react';
 import ConfirmDeleteModal from '../../common/ConfirmDeleteModal';
 import { getAllDrivers, deleteDriver } from '../../../api/driverApi';
+import * as XLSX from 'xlsx-js-style';
 
 const DriverManagement = () => {
   const navigate = useNavigate();
@@ -47,14 +49,14 @@ const DriverManagement = () => {
       setLoading(true);
       const response = await getAllDrivers();
       // console.log('Driver list response:', response);
-      
+
       // Check if response has data property
       const driversData = response.data || response;
       // console.log('Drivers data:', driversData);
-      
+
       // Log the raw driver data to understand ID formats
       // console.log('Raw driver data:', driversData);
-      
+
       // Transform API response to match existing data structure
       const transformedDrivers = driversData.map(driver => {
         // console.log('Processing driver:', driver);
@@ -65,7 +67,7 @@ const DriverManagement = () => {
         //   did: driver.did,
         //   _id: driver._id
         // });
-        
+
         return {
           id: driver.did || driver.driver_id || driver.id || driver._id,
           name: driver.driver_name || driver.name,
@@ -73,10 +75,10 @@ const DriverManagement = () => {
           initial: (driver.driver_name || driver.name) ? (driver.driver_name || driver.name).split(' ').map(n => n[0]).join('').toUpperCase() : 'D',
           color: 'bg-teal-700',
           profileImage: driver.driver_image,
-          vehicle: { 
-            name: driver.vehicle_type || driver.vehicleType, 
-            number: driver.vehicle_number || driver.vehicleNumber, 
-            capacity: driver.capacity 
+          vehicle: {
+            name: driver.vehicle_type || driver.vehicleType,
+            number: driver.vehicle_number || driver.vehicleNumber,
+            capacity: driver.capacity
           },
           deliveryType: driver.delivery_type || driver.deliveryType,
           status: driver.status,
@@ -195,6 +197,159 @@ const DriverManagement = () => {
     }
   };
 
+  // Export drivers to Excel with all details
+  const handleExportDrivers = async () => {
+    if (drivers.length === 0) {
+      alert('No drivers to export');
+      return;
+    }
+
+    try {
+      // Fetch detailed data for all drivers
+      const { getDriverById } = await import('../../../api/driverApi');
+      const detailedDrivers = await Promise.all(
+        drivers.map(async (driver) => {
+          try {
+            const response = await getDriverById(driver.id);
+            return response.data || response;
+          } catch (error) {
+            console.error(`Error fetching driver ${driver.id}:`, error);
+            return null;
+          }
+        })
+      );
+
+      // Filter out any failed fetches and prepare data for export
+      const exportData = detailedDrivers
+        .filter(driver => driver !== null)
+        .map(driver => ({
+          // Personal Information
+          'NAME': driver.driver_name || driver.name || 'N/A',
+          'PHONE': driver.phone_number || driver.phone || 'N/A',
+          'EMAIL': driver.email || 'N/A',
+          'ADDRESS': driver.address || 'N/A',
+          'CITY': driver.city || 'N/A',
+          'STATE': driver.state || 'N/A',
+          'PIN CODE': driver.pin_code || 'N/A',
+          'LICENSE NUMBER': driver.license_number || 'N/A',
+          'LICENSE EXPIRY': driver.license_expiry_date || 'N/A',
+          'STATUS': driver.status || 'N/A',
+
+          // Vehicle Information
+          'VEHICLE OWNERSHIP': driver.vehicle_ownership || 'N/A',
+          'VEHICLE NAME': driver.available_vehicle || 'N/A',
+          'VEHICLE NUMBER': driver.vehicle_number || 'N/A',
+          'CAPACITY (TONS)': driver.capacity || 'N/A',
+          'VEHICLE CONDITION': driver.vehicle_condition || 'N/A',
+          'INSURANCE NUMBER': driver.insurance_number || 'N/A',
+          'INSURANCE EXPIRY': driver.insurance_expiry_date || 'N/A',
+          'POLLUTION CERT': driver.pollution_certificate || 'N/A',
+          'POLLUTION CERT EXPIRY': driver.pollution_certificate_expiry_date || 'N/A',
+          'KA PERMIT': driver.ka_permit || 'N/A',
+          'KA PERMIT EXPIRY': driver.ka_permit_expiry_date || 'N/A',
+
+          // Statistics & Other Info
+          'DELIVERY TYPE': driver.delivery_type || 'N/A',
+          'WORKING HOURS': driver.working_hours ? `${driver.working_hours} hrs` : 'N/A',
+          'TOTAL DELIVERIES': driver.total_deliveries || '0',
+          'RATING': driver.rating || '0'
+        }));
+
+      if (exportData.length === 0) {
+        alert('No driver data available to export');
+        return;
+      }
+
+      // Create worksheet
+      const worksheet = XLSX.utils.json_to_sheet(exportData);
+
+      // Set column widths
+      worksheet['!cols'] = [
+        { wch: 20 }, // NAME
+        { wch: 15 }, // PHONE
+        { wch: 25 }, // EMAIL
+        { wch: 30 }, // ADDRESS
+        { wch: 15 }, // CITY
+        { wch: 15 }, // STATE
+        { wch: 10 }, // PIN CODE
+        { wch: 18 }, // LICENSE NUMBER
+        { wch: 15 }, // LICENSE EXPIRY
+        { wch: 12 }, // STATUS
+        { wch: 18 }, // VEHICLE OWNERSHIP
+        { wch: 18 }, // VEHICLE NAME
+        { wch: 18 }, // VEHICLE NUMBER
+        { wch: 15 }, // CAPACITY
+        { wch: 18 }, // VEHICLE CONDITION
+        { wch: 20 }, // INSURANCE NUMBER
+        { wch: 18 }, // INSURANCE EXPIRY
+        { wch: 18 }, // POLLUTION CERT
+        { wch: 22 }, // POLLUTION CERT EXPIRY
+        { wch: 15 }, // KA PERMIT
+        { wch: 18 }, // KA PERMIT EXPIRY
+        { wch: 15 }, // DELIVERY TYPE
+        { wch: 15 }, // WORKING HOURS
+        { wch: 18 }, // TOTAL DELIVERIES
+        { wch: 10 }  // RATING
+      ];
+
+      // Get the range of cells
+      const range = XLSX.utils.decode_range(worksheet['!ref']);
+      const numCols = range.e.c + 1;
+
+      // Style header row
+      const headerCells = [];
+      for (let C = 0; C < numCols; C++) {
+        headerCells.push(XLSX.utils.encode_cell({ r: 0, c: C }));
+      }
+
+      headerCells.forEach(cell => {
+        if (worksheet[cell]) {
+          worksheet[cell].s = {
+            font: { bold: true, sz: 11, name: "Calibri", color: { rgb: "FFFFFF" } },
+            fill: { fgColor: { rgb: "4472C4" } },
+            alignment: { horizontal: "center", vertical: "center" },
+            border: {
+              top: { style: "thin", color: { rgb: "000000" } },
+              bottom: { style: "thin", color: { rgb: "000000" } },
+              left: { style: "thin", color: { rgb: "000000" } },
+              right: { style: "thin", color: { rgb: "000000" } }
+            }
+          };
+        }
+      });
+
+      // Style data rows
+      for (let R = 1; R <= range.e.r; ++R) {
+        for (let C = 0; C < numCols; ++C) {
+          const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+          if (worksheet[cellAddress]) {
+            worksheet[cellAddress].s = {
+              font: { sz: 11, name: "Calibri" },
+              alignment: { horizontal: "center", vertical: "center" },
+              border: {
+                top: { style: "thin", color: { rgb: "000000" } },
+                bottom: { style: "thin", color: { rgb: "000000" } },
+                left: { style: "thin", color: { rgb: "000000" } },
+                right: { style: "thin", color: { rgb: "000000" } }
+              }
+            };
+          }
+        }
+      }
+
+      // Create workbook and add worksheet
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Drivers');
+
+      // Generate Excel file and trigger download
+      const fileName = `drivers_detailed_${new Date().toISOString().split('T')[0]}.xlsx`;
+      XLSX.writeFile(workbook, fileName, { bookType: 'xlsx', cellStyles: true });
+    } catch (error) {
+      console.error('Error exporting drivers:', error);
+      alert('Failed to export driver data. Please try again.');
+    }
+  };
+
   return (
     <div className="p-4 sm:p-6 lg:p-8">
       {/* Header Tabs */}
@@ -214,13 +369,22 @@ const DriverManagement = () => {
           </button>
         </div>
 
-        <button 
-          onClick={() => navigate('/drivers/add')}
-          className="px-5 py-2.5 bg-[#0D7C66] hover:bg-[#0a6354] text-white rounded-lg font-medium transition-colors flex items-center gap-2 shadow-sm text-sm"
-        >
-          <Plus className="w-4 h-4" />
-          Add Driver
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={handleExportDrivers}
+            className="px-5 py-2.5 bg-[#1DB890] hover:bg-[#19a57e] text-white rounded-lg font-medium transition-colors flex items-center gap-2 shadow-sm text-sm"
+          >
+            <Download className="w-4 h-4" />
+            Export Excel
+          </button>
+          <button
+            onClick={() => navigate('/drivers/add')}
+            className="px-5 py-2.5 bg-[#0D7C66] hover:bg-[#0a6354] text-white rounded-lg font-medium transition-colors flex items-center gap-2 shadow-sm text-sm"
+          >
+            <Plus className="w-4 h-4" />
+            Add Driver
+          </button>
+        </div>
       </div>
 
       {/* Loading indicator */}
@@ -313,8 +477,8 @@ const DriverManagement = () => {
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           {driver.profileImage ? (
-                            <img 
-                              src={`${import.meta.env.VITE_API_BASE_URL.replace('/api/v1', '')}${driver.profileImage}`} 
+                            <img
+                              src={`${import.meta.env.VITE_API_BASE_URL.replace('/api/v1', '')}${driver.profileImage}`}
                               alt={driver.name}
                               className="w-10 h-10 rounded-full object-cover"
                               onError={(e) => {
@@ -390,12 +554,12 @@ const DriverManagement = () => {
 
       {/* Dropdown Menu - Fixed Position Outside Table */}
       {openDropdown && (
-        <div 
+        <div
           ref={dropdownRef}
           className="fixed w-32 bg-white rounded-lg shadow-lg border border-[#D0E0DB] py-1 z-[100]"
-          style={{ 
-            top: `${dropdownPosition.top}px`, 
-            left: `${dropdownPosition.left}px` 
+          style={{
+            top: `${dropdownPosition.top}px`,
+            left: `${dropdownPosition.left}px`
           }}
         >
           <button
@@ -413,7 +577,7 @@ const DriverManagement = () => {
             Edit
           </button>
           <button
-            onClick={() => handleAction('delete', openDropdown, 
+            onClick={() => handleAction('delete', openDropdown,
               drivers.find(d => d.id === openDropdown)?.name)}
             className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-[#F0F4F3] transition-colors flex items-center gap-2"
           >

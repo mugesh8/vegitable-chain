@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Plus, MoreVertical, Eye, Edit, Trash2 } from 'lucide-react';
+import { Search, Plus, MoreVertical, Eye, Edit, Trash2, Download } from 'lucide-react';
 import ConfirmDeleteModal from '../../common/ConfirmDeleteModal';
 import { getAllVendors } from '../../../api/vendorApi';
 import { getAllProducts } from '../../../api/productApi';
 import { BASE_URL } from '../../../config/config';
+import * as XLSX from 'xlsx-js-style';
 
 const VendorDashboard = () => {
   const navigate = useNavigate();
@@ -27,21 +28,21 @@ const VendorDashboard = () => {
           getAllVendors(1, 100),
           getAllProducts(1, 100)
         ]);
-        
+
         const products = productsResponse.data || [];
         const productMap = {};
         products.forEach(p => {
           productMap[p.pid] = p.product_name;
         });
-        
+
         const vendorsData = (vendorsResponse.data || []).map(vendor => {
           let productList = [];
           if (typeof vendor.product_list === 'string') {
             try {
               const parsed = JSON.parse(vendor.product_list);
               if (Array.isArray(parsed)) {
-                productList = parsed.map(item => 
-                  typeof item === 'object' && item.pid 
+                productList = parsed.map(item =>
+                  typeof item === 'object' && item.pid
                     ? { product_id: item.pid, product_name: item.product_name }
                     : { product_id: item, product_name: productMap[item] || `Product ${item}` }
                 );
@@ -52,7 +53,7 @@ const VendorDashboard = () => {
           }
           return { ...vendor, product_list: productList };
         });
-        
+
         setVendors(vendorsData);
         setAllProducts(products);
       } catch (err) {
@@ -125,7 +126,7 @@ const VendorDashboard = () => {
     let email = '';
     let location = '';
     let products = [];
-    
+
     // Use already parsed product_list from useEffect
     if (Array.isArray(vendor.product_list) && vendor.product_list.length > 0) {
       products = vendor.product_list.map(product => ({
@@ -133,7 +134,7 @@ const VendorDashboard = () => {
         color: 'bg-[#D4F4E8] text-[#047857]'
       }));
     }
-    
+
     if (vendor.vendor_type === 'farmer') {
       vendorType = 'Farmer';
       vendorId = vendor.fid || '';
@@ -198,6 +199,189 @@ const VendorDashboard = () => {
     { label: 'Third Party', value: thirdPartyCount.toString(), change: '', color: 'bg-gradient-to-r from-[#047857] to-[#065F46]' }
   ];
 
+  // Export vendors to Excel with all details
+  const handleExportVendors = async () => {
+    if (transformedVendors.length === 0) {
+      alert('No vendors to export');
+      return;
+    }
+
+    try {
+      // Import the necessary APIs
+      const { getFarmerById } = await import('../../../api/farmerApi');
+      const { getSupplierById } = await import('../../../api/supplierApi');
+      const { getThirdPartyById } = await import('../../../api/thirdPartyApi');
+
+      // Fetch detailed data for all vendors
+      const detailedVendors = await Promise.all(
+        vendors.map(async (vendor) => {
+          try {
+            let response = null;
+            if (vendor.vendor_type === 'farmer') {
+              response = await getFarmerById(vendor.fid);
+            } else if (vendor.vendor_type === 'supplier') {
+              response = await getSupplierById(vendor.sid);
+            } else if (vendor.vendor_type === 'third party') {
+              response = await getThirdPartyById(vendor.tpid);
+            }
+
+            // Debug: Log the response to see the structure
+            console.log(`Vendor ${vendor.vendor_type} response:`, response);
+
+            return {
+              ...vendor,
+              details: response?.data || response,
+              rawResponse: response
+            };
+          } catch (error) {
+            console.error(`Error fetching vendor details:`, error);
+            return { ...vendor, details: null };
+          }
+        })
+      );
+
+      // Debug: Log all detailed vendors
+      console.log('All detailed vendors:', detailedVendors);
+
+      // Prepare data for export with all fields
+      const exportData = detailedVendors.map(vendor => {
+        const details = vendor.details || vendor;
+        const vendorType = vendor.vendor_type;
+
+        console.log(`Processing ${vendorType}:`, details);
+
+        // Common fields for all vendor types
+        const commonData = {
+          'VENDOR TYPE': vendorType === 'farmer' ? 'Farmer' : vendorType === 'supplier' ? 'Supplier' : 'Third Party',
+          'NAME': details.farmer_name || details.supplier_name || details.third_party_name || vendor.name || 'N/A',
+          'PHONE': details.phone || details.phone_number || details.primary_phone || vendor.phone || 'N/A',
+          'EMAIL': details.email || vendor.email || 'N/A',
+          'ADDRESS': details.address || vendor.address || 'N/A',
+          'CITY': details.city || vendor.city || 'N/A',
+          'STATE': details.state || vendor.state || 'N/A',
+          'PIN CODE': details.pin_code || details.pincode || vendor.pin_code || 'N/A',
+          'STATUS': details.status || vendor.status || 'N/A'
+        };
+
+        // Type-specific fields
+        if (vendorType === 'farmer') {
+          return {
+            ...commonData,
+            'FARMER ID': details.fid || vendor.fid || 'N/A',
+            'ALTERNATE PHONE': details.alternate_phone || details.secondary_phone || 'N/A',
+            'FARM SIZE': details.farm_size || details.farmSize || 'N/A',
+            'FARMING TYPE': details.farming_type || details.farmingType || 'N/A',
+            'BANK NAME': details.bank_name || details.bankName || 'N/A',
+            'ACCOUNT NUMBER': details.account_number || details.accountNumber || 'N/A',
+            'IFSC CODE': details.ifsc_code || details.ifscCode || 'N/A',
+            'BRANCH': details.branch || 'N/A',
+            'REGISTRATION NUMBER': details.registration_number || details.registrationNumber || vendor.registration_number || 'N/A',
+            'GST NUMBER': details.gst_number || details.gstNumber || 'N/A'
+          };
+        } else if (vendorType === 'supplier') {
+          return {
+            ...commonData,
+            'SUPPLIER ID': details.sid || vendor.sid || 'N/A',
+            'ALTERNATE PHONE': details.alternate_phone || details.secondary_phone || 'N/A',
+            'COMPANY NAME': details.company_name || details.companyName || 'N/A',
+            'BUSINESS TYPE': details.business_type || details.businessType || 'N/A',
+            'BANK NAME': details.bank_name || details.bankName || 'N/A',
+            'ACCOUNT NUMBER': details.account_number || details.accountNumber || 'N/A',
+            'IFSC CODE': details.ifsc_code || details.ifscCode || 'N/A',
+            'BRANCH': details.branch || 'N/A',
+            'REGISTRATION NUMBER': details.registration_number || details.registrationNumber || vendor.registration_number || 'N/A',
+            'GST NUMBER': details.gst_number || details.gstNumber || 'N/A'
+          };
+        } else {
+          // Third Party
+          return {
+            ...commonData,
+            'THIRD PARTY ID': details.tpid || vendor.tpid || 'N/A',
+            'ALTERNATE PHONE': details.alternate_phone || details.secondary_phone || 'N/A',
+            'COMPANY NAME': details.company_name || details.companyName || 'N/A',
+            'BUSINESS TYPE': details.business_type || details.businessType || 'N/A',
+            'BANK NAME': details.bank_name || details.bankName || 'N/A',
+            'ACCOUNT NUMBER': details.account_number || details.accountNumber || 'N/A',
+            'IFSC CODE': details.ifsc_code || details.ifscCode || 'N/A',
+            'BRANCH': details.branch || 'N/A',
+            'REGISTRATION NUMBER': details.registration_number || details.registrationNumber || vendor.registration_number || 'N/A',
+            'GST NUMBER': details.gst_number || details.gstNumber || 'N/A'
+          };
+        }
+      });
+
+      console.log('Export data:', exportData);
+
+      if (exportData.length === 0) {
+        alert('No vendor data available to export');
+        return;
+      }
+
+      // Create worksheet
+      const worksheet = XLSX.utils.json_to_sheet(exportData);
+
+      // Set column widths (adjust based on number of columns)
+      const headers = Object.keys(exportData[0]);
+      worksheet['!cols'] = headers.map(() => ({ wch: 20 }));
+
+      // Get the range of cells
+      const range = XLSX.utils.decode_range(worksheet['!ref']);
+      const numCols = range.e.c + 1;
+
+      // Style header row
+      const headerCells = [];
+      for (let C = 0; C < numCols; C++) {
+        headerCells.push(XLSX.utils.encode_cell({ r: 0, c: C }));
+      }
+
+      headerCells.forEach(cell => {
+        if (worksheet[cell]) {
+          worksheet[cell].s = {
+            font: { bold: true, sz: 11, name: "Calibri", color: { rgb: "FFFFFF" } },
+            fill: { fgColor: { rgb: "4472C4" } },
+            alignment: { horizontal: "center", vertical: "center" },
+            border: {
+              top: { style: "thin", color: { rgb: "000000" } },
+              bottom: { style: "thin", color: { rgb: "000000" } },
+              left: { style: "thin", color: { rgb: "000000" } },
+              right: { style: "thin", color: { rgb: "000000" } }
+            }
+          };
+        }
+      });
+
+      // Style data rows
+      for (let R = 1; R <= range.e.r; ++R) {
+        for (let C = 0; C < numCols; ++C) {
+          const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+          if (worksheet[cellAddress]) {
+            worksheet[cellAddress].s = {
+              font: { sz: 11, name: "Calibri" },
+              alignment: { horizontal: "center", vertical: "center" },
+              border: {
+                top: { style: "thin", color: { rgb: "000000" } },
+                bottom: { style: "thin", color: { rgb: "000000" } },
+                left: { style: "thin", color: { rgb: "000000" } },
+                right: { style: "thin", color: { rgb: "000000" } }
+              }
+            };
+          }
+        }
+      }
+
+      // Create workbook and add worksheet
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Vendors');
+
+      // Generate Excel file and trigger download
+      const fileName = `vendors_detailed_${new Date().toISOString().split('T')[0]}.xlsx`;
+      XLSX.writeFile(workbook, fileName, { bookType: 'xlsx', cellStyles: true });
+    } catch (error) {
+      console.error('Error exporting vendors:', error);
+      alert('Failed to export vendor data. Please try again.');
+    }
+  };
+
   if (loading) {
     return (
       <div className="p-4 sm:p-6 lg:p-8">
@@ -221,7 +405,14 @@ const VendorDashboard = () => {
   return (
     <div className="p-4 sm:p-6 lg:p-8">
       {/* Header with Add Button */}
-      <div className="flex items-center justify-end mb-6">
+      <div className="flex items-center justify-end gap-3 mb-6">
+        <button
+          onClick={handleExportVendors}
+          className="bg-[#1DB890] hover:bg-[#19a57e] text-white px-4 sm:px-6 py-2.5 rounded-lg font-medium text-sm flex items-center gap-2 transition-colors shadow-sm"
+        >
+          <Download className="w-4 h-4" />
+          Export Excel
+        </button>
         <button
           onClick={() => navigate('/vendors/add')}
           className="bg-[#0D7C66] hover:bg-[#0a6354] text-white px-4 sm:px-6 py-2.5 rounded-lg font-medium text-sm flex items-center gap-2 transition-colors shadow-sm"
@@ -243,8 +434,8 @@ const VendorDashboard = () => {
             <div className="text-4xl font-bold mb-2">{stat.value}</div>
             {stat.change && (
               <div className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${index === 2 || index === 3
-                  ? 'bg-white/20 text-white'
-                  : 'bg-white/60 text-[#0D5C4D]'
+                ? 'bg-white/20 text-white'
+                : 'bg-white/60 text-[#0D5C4D]'
                 }`}>
                 {stat.change}
               </div>

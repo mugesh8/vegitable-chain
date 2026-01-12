@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Plus, MoreVertical, Eye, Edit, Trash2 } from 'lucide-react';
+import { Search, Plus, MoreVertical, Eye, Edit, Trash2, Download } from 'lucide-react';
 import ConfirmDeleteModal from '../../common/ConfirmDeleteModal';
 import { getAllThirdParties } from '../../../api/thirdPartyApi';
 import { getAllProducts } from '../../../api/productApi';
 import { BASE_URL } from '../../../config/config';
+import * as XLSX from 'xlsx-js-style';
 
 const ThirdPartyManagement = () => {
   const navigate = useNavigate();
@@ -40,7 +41,7 @@ const ThirdPartyManagement = () => {
           getAllThirdParties(),
           getAllProducts(1, 100)
         ]);
-        
+
         if (thirdPartiesResponse.success) {
           setThirdParties(thirdPartiesResponse.data);
         } else {
@@ -82,6 +83,83 @@ const ThirdPartyManagement = () => {
     }
   };
 
+  // Export third parties to Excel
+  const handleExportThirdParties = () => {
+    if (thirdParties.length === 0) {
+      alert('No third parties to export');
+      return;
+    }
+
+    // Prepare data for export
+    const exportData = thirdParties.map(thirdParty => ({
+      'NAME': thirdParty.third_party_name || 'N/A',
+      'FARM PLACE': thirdParty.city || 'N/A',
+      'CONTACT#': thirdParty.phone || 'N/A',
+      'ACC NAME': thirdParty.account_holder_name || 'N/A',
+      'ACC NUMBER': thirdParty.account_number || 'N/A',
+      'IFS CODE': thirdParty.IFSC_code || thirdParty.ifsc_code || 'N/A',
+      'BRANCH': thirdParty.branch_name || 'N/A'
+    }));
+
+    // Create worksheet
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+
+    // Set column widths
+    worksheet['!cols'] = [
+      { wch: 20 }, // NAME
+      { wch: 15 }, // FARM PLACE
+      { wch: 15 }, // CONTACT#
+      { wch: 25 }, // ACC NAME
+      { wch: 20 }, // ACC NUMBER
+      { wch: 15 }, // IFS CODE
+      { wch: 20 }  // BRANCH
+    ];
+
+    // Style header row
+    const headerCells = ['A1', 'B1', 'C1', 'D1', 'E1', 'F1', 'G1'];
+    headerCells.forEach(cell => {
+      if (worksheet[cell]) {
+        worksheet[cell].s = {
+          font: { bold: true, sz: 11, name: "Calibri", color: { rgb: "FFFFFF" } },
+          fill: { fgColor: { rgb: "4472C4" } },
+          alignment: { horizontal: "center", vertical: "center" },
+          border: {
+            top: { style: "thin", color: { rgb: "000000" } },
+            bottom: { style: "thin", color: { rgb: "000000" } },
+            left: { style: "thin", color: { rgb: "000000" } },
+            right: { style: "thin", color: { rgb: "000000" } }
+          }
+        };
+      }
+    });
+
+    // Style data rows
+    const range = XLSX.utils.decode_range(worksheet['!ref']);
+    for (let R = 1; R <= range.e.r; ++R) {
+      for (let C = 0; C <= 6; ++C) {
+        const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+        if (worksheet[cellAddress]) {
+          worksheet[cellAddress].s = {
+            font: { sz: 10, name: "Calibri" },
+            alignment: { horizontal: "left", vertical: "center" },
+            border: {
+              top: { style: "thin", color: { rgb: "000000" } },
+              bottom: { style: "thin", color: { rgb: "000000" } },
+              left: { style: "thin", color: { rgb: "000000" } },
+              right: { style: "thin", color: { rgb: "000000" } }
+            }
+          };
+        }
+      }
+    }
+
+    // Create workbook and export
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Third Parties');
+    const fileName = `third_parties_list_${new Date().toISOString().split('T')[0]}.xlsx`;
+    XLSX.writeFile(workbook, fileName, { bookType: 'xlsx', cellStyles: true });
+  };
+
   // Transform API data to match component structure
   const transformThirdPartiesData = (apiData) => {
     return apiData.map(thirdParty => ({
@@ -119,10 +197,10 @@ const ThirdPartyManagement = () => {
   // Calculate statistics based on fetched data
   const calculateStats = (data) => {
     if (!data || data.length === 0) return [];
-    
+
     const activeCount = data.filter(tp => tp.status === 'active').length;
     const totalCount = data.length;
-    
+
     return [
       { label: 'Total Third Party', value: totalCount.toString(), change: '', color: 'bg-gradient-to-r from-[#D1FAE5] to-[#A7F3D0]' },
       { label: 'Active Third Party', value: activeCount.toString(), change: '', color: 'bg-gradient-to-r from-[#6EE7B7] to-[#34D399]' },
@@ -132,19 +210,19 @@ const ThirdPartyManagement = () => {
   };
 
   const transformedThirdParties = transformThirdPartiesData(thirdParties);
-  
+
   // Filter and paginate data
-  const filteredThirdParties = transformedThirdParties.filter(tp => 
+  const filteredThirdParties = transformedThirdParties.filter(tp =>
     tp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     tp.contact.includes(searchQuery) ||
     tp.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
     tp.location.toLowerCase().includes(searchQuery.toLowerCase())
   );
-  
+
   const totalPages = Math.ceil(filteredThirdParties.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedThirdParties = filteredThirdParties.slice(startIndex, startIndex + itemsPerPage);
-  
+
   const stats = calculateStats(thirdParties);
 
   // Show loading state
@@ -166,8 +244,8 @@ const ThirdPartyManagement = () => {
           <div className="text-red-800 text-center">
             <h3 className="font-bold text-lg mb-2">Error Loading Data</h3>
             <p>{error}</p>
-            <button 
-              onClick={() => window.location.reload()} 
+            <button
+              onClick={() => window.location.reload()}
               className="mt-4 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
             >
               Retry
@@ -180,8 +258,15 @@ const ThirdPartyManagement = () => {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8">
-      <div className="flex items-center justify-end mb-6">
-        <button 
+      <div className="flex items-center justify-end gap-3 mb-6">
+        <button
+          onClick={handleExportThirdParties}
+          className="bg-[#1DB890] hover:bg-[#19a57e] text-white px-4 sm:px-6 py-2.5 rounded-lg font-medium text-sm flex items-center gap-2 transition-colors shadow-sm"
+        >
+          <Download className="w-4 h-4" />
+          Export Excel
+        </button>
+        <button
           onClick={() => navigate('/third-party/add')}
           className="bg-[#0D7C66] hover:bg-[#0a6354] text-white px-4 sm:px-6 py-2.5 rounded-lg font-medium text-sm flex items-center gap-2 transition-colors shadow-sm"
         >
@@ -192,8 +277,8 @@ const ThirdPartyManagement = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         {stats.map((stat, index) => (
-          <div 
-            key={index} 
+          <div
+            key={index}
             className={`${stat.color} rounded-2xl p-6 ${index === 2 || index === 3 ? 'text-white' : 'text-[#0D5C4D]'}`}
           >
             <div className="text-sm font-medium mb-2 opacity-90">{stat.label}</div>
@@ -236,15 +321,15 @@ const ThirdPartyManagement = () => {
             </thead>
             <tbody>
               {paginatedThirdParties.map((thirdParty, index) => (
-                <tr 
-                  key={thirdParty.id} 
+                <tr
+                  key={thirdParty.id}
                   className={`border-b border-[#D0E0DB] hover:bg-[#F0F4F3] transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-[#F0F4F3]/30'}`}
                 >
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
                       {thirdParty.profileImage ? (
-                        <img 
-                          src={`${BASE_URL}${thirdParty.profileImage}`} 
+                        <img
+                          src={`${BASE_URL}${thirdParty.profileImage}`}
                           alt={thirdParty.name}
                           className="w-10 h-10 rounded-full object-cover"
                           onError={(e) => {
@@ -304,7 +389,7 @@ const ThirdPartyManagement = () => {
                   </td>
 
                   <td className="px-6 py-4">
-                    <button 
+                    <button
                       onClick={(e) => {
                         e.stopPropagation();
                         toggleDropdown(thirdParty.id, e);
@@ -325,7 +410,7 @@ const ThirdPartyManagement = () => {
             Showing {startIndex + 1}-{Math.min(startIndex + itemsPerPage, filteredThirdParties.length)} of {filteredThirdParties.length} third parties
           </div>
           <div className="flex items-center gap-2">
-            <button 
+            <button
               onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
               disabled={currentPage === 1}
               className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -333,17 +418,16 @@ const ThirdPartyManagement = () => {
               &lt;
             </button>
             {[...Array(totalPages)].map((_, i) => (
-              <button 
+              <button
                 key={i + 1}
                 onClick={() => setCurrentPage(i + 1)}
-                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                  currentPage === i + 1 ? 'bg-[#0D8568] text-white' : 'text-[#6B8782] hover:bg-[#D0E0DB]'
-                }`}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${currentPage === i + 1 ? 'bg-[#0D8568] text-white' : 'text-[#6B8782] hover:bg-[#D0E0DB]'
+                  }`}
               >
                 {i + 1}
               </button>
             ))}
-            <button 
+            <button
               onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
               disabled={currentPage === totalPages}
               className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
@@ -356,12 +440,12 @@ const ThirdPartyManagement = () => {
 
       {/* Dropdown Menu - Fixed Position Outside Table */}
       {openDropdown && (
-        <div 
+        <div
           ref={dropdownRef}
           className="fixed w-32 bg-white rounded-lg shadow-lg border border-[#D0E0DB] py-1 z-[100]"
-          style={{ 
-            top: `${dropdownPosition.top}px`, 
-            left: `${dropdownPosition.left}px` 
+          style={{
+            top: `${dropdownPosition.top}px`,
+            left: `${dropdownPosition.left}px`
           }}
         >
           <button
@@ -379,7 +463,7 @@ const ThirdPartyManagement = () => {
             Edit
           </button>
           <button
-            onClick={() => handleAction('delete', openDropdown, 
+            onClick={() => handleAction('delete', openDropdown,
               transformedThirdParties.find(tp => tp.id === openDropdown)?.name)}
             className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-[#F0F4F3] transition-colors flex items-center gap-2"
           >

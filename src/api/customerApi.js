@@ -45,4 +45,8 @@ export const deleteCustomer = async (id) => {
   } catch (error) {
     throw error.response?.data || error.message;
   }
+<<<<<<< HEAD
 };
+=======
+};
+>>>>>>> 44a2c41 (12/01/2026)

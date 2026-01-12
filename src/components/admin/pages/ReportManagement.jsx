@@ -29,6 +29,26 @@ const ReportManagement = () => {
       path: '/reports/farmer'
     },
     {
+      title: 'Supplier Report',
+      description: 'Supply quantity, payout, pending dues',
+      metric: 'Active Suppliers: 32',
+      link: 'View Report →',
+      icon: Users,
+      bgColor: 'bg-teal-50',
+      iconColor: 'text-teal-500',
+      path: '/reports/supplier'
+    },
+    {
+      title: 'Third Party Report',
+      description: 'Supply quantity, payout, pending dues',
+      metric: 'Active Third Parties: 18',
+      link: 'View Report →',
+      icon: Users,
+      bgColor: 'bg-cyan-50',
+      iconColor: 'text-cyan-500',
+      path: '/reports/third-party'
+    },
+    {
       title: 'Payout Report',
       description: 'For farmers, labour, and drivers',
       metric: 'Total Payouts: ₹8,45,000',
@@ -140,8 +160,8 @@ const ReportManagement = () => {
       {/* Report Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
         {reportCards.map((card, index) => (
-          <div 
-            key={index} 
+          <div
+            key={index}
             onClick={() => navigate(card.path)}
             className="bg-white rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow border border-gray-100 cursor-pointer hover:border-emerald-200"
           >

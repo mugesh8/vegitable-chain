@@ -1,19 +1,21 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  Search, 
-  Plus, 
-  MoreVertical, 
-  ChevronLeft, 
+import {
+  Search,
+  Plus,
+  MoreVertical,
+  ChevronLeft,
   ChevronRight,
   Eye,
   Edit,
-  Trash2
+  Trash2,
+  Download
 } from 'lucide-react';
 import ConfirmDeleteModal from '../../common/ConfirmDeleteModal';
 import { getAllFarmers, deleteFarmer } from '../../../api/farmerApi';
 import { getAllProducts } from '../../../api/productApi';
 import { BASE_URL } from '../../../config/config';
+import * as XLSX from 'xlsx-js-style';
 
 const Farmers = () => {
   const navigate = useNavigate();
@@ -38,21 +40,21 @@ const Farmers = () => {
           getAllFarmers(),
           getAllProducts(1, 100)
         ]);
-        
+
         const products = productsResponse.data || [];
         const productMap = {};
         products.forEach(p => {
           productMap[p.pid] = p.product_name;
         });
-        
+
         const farmersData = (farmersResponse.data || []).map(farmer => {
           let productList = [];
           if (typeof farmer.product_list === 'string') {
             try {
               const parsed = JSON.parse(farmer.product_list);
               if (Array.isArray(parsed)) {
-                productList = parsed.map(item => 
-                  typeof item === 'object' && item.pid 
+                productList = parsed.map(item =>
+                  typeof item === 'object' && item.pid
                     ? { product_id: item.pid, product_name: item.product_name }
                     : { product_id: item, product_name: productMap[item] || `Product ${item}` }
                 );
@@ -63,7 +65,7 @@ const Farmers = () => {
           }
           return { ...farmer, product_list: productList };
         });
-        
+
         setAllFarmers(farmersData);
       } catch (error) {
         console.error('Failed to fetch data:', error);
@@ -78,7 +80,7 @@ const Farmers = () => {
     let filtered = [...allFarmers];
 
     if (searchQuery) {
-      filtered = filtered.filter(farmer => 
+      filtered = filtered.filter(farmer =>
         farmer.farmer_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         farmer.phone?.includes(searchQuery) ||
         farmer.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -134,6 +136,83 @@ const Farmers = () => {
     setOpenDropdown(null);
   };
 
+  // Export farmers to Excel
+  const handleExportFarmers = () => {
+    if (allFarmers.length === 0) {
+      alert('No farmers to export');
+      return;
+    }
+
+    // Prepare data for export
+    const exportData = allFarmers.map(farmer => ({
+      'NAME': farmer.farmer_name || 'N/A',
+      'FARM PLACE': farmer.city || 'N/A',
+      'CONTACT#': farmer.phone || 'N/A',
+      'ACC NAME': farmer.account_holder_name || 'N/A',
+      'ACC NUMBER': farmer.account_number || 'N/A',
+      'IFS CODE': farmer.IFSC_code || 'N/A',
+      'BRANCH': farmer.branch_name || 'N/A'
+    }));
+
+    // Create worksheet
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+
+    // Set column widths
+    worksheet['!cols'] = [
+      { wch: 20 }, // NAME
+      { wch: 15 }, // FARM PLACE
+      { wch: 15 }, // CONTACT#
+      { wch: 25 }, // ACC NAME
+      { wch: 20 }, // ACC NUMBER
+      { wch: 15 }, // IFS CODE
+      { wch: 20 }  // BRANCH
+    ];
+
+    // Style header row
+    const headerCells = ['A1', 'B1', 'C1', 'D1', 'E1', 'F1', 'G1'];
+    headerCells.forEach(cell => {
+      if (worksheet[cell]) {
+        worksheet[cell].s = {
+          font: { bold: true, sz: 11, name: "Calibri", color: { rgb: "FFFFFF" } },
+          fill: { fgColor: { rgb: "4472C4" } },
+          alignment: { horizontal: "center", vertical: "center" },
+          border: {
+            top: { style: "thin", color: { rgb: "000000" } },
+            bottom: { style: "thin", color: { rgb: "000000" } },
+            left: { style: "thin", color: { rgb: "000000" } },
+            right: { style: "thin", color: { rgb: "000000" } }
+          }
+        };
+      }
+    });
+
+    // Style data rows
+    const range = XLSX.utils.decode_range(worksheet['!ref']);
+    for (let R = 1; R <= range.e.r; ++R) {
+      for (let C = 0; C <= 6; ++C) {
+        const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+        if (worksheet[cellAddress]) {
+          worksheet[cellAddress].s = {
+            font: { sz: 10, name: "Calibri" },
+            alignment: { horizontal: "left", vertical: "center" },
+            border: {
+              top: { style: "thin", color: { rgb: "000000" } },
+              bottom: { style: "thin", color: { rgb: "000000" } },
+              left: { style: "thin", color: { rgb: "000000" } },
+              right: { style: "thin", color: { rgb: "000000" } }
+            }
+          };
+        }
+      }
+    }
+
+    // Create workbook and export
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Farmers');
+    const fileName = `farmers_list_${new Date().toISOString().split('T')[0]}.xlsx`;
+    XLSX.writeFile(workbook, fileName, { bookType: 'xlsx', cellStyles: true });
+  };
+
   const totalFarmers = allFarmers.length;
   const activeFarmers = allFarmers.filter(f => f.status === 'active').length;
 
@@ -146,9 +225,16 @@ const Farmers = () => {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8">
-      {/* Header with Add Button */}
-      <div className="flex items-center justify-end mb-6">
-        <button 
+      {/* Header with Add Button and Export */}
+      <div className="flex items-center justify-end gap-3 mb-6">
+        <button
+          onClick={handleExportFarmers}
+          className="bg-[#1DB890] hover:bg-[#19a57e] text-white px-4 sm:px-6 py-2.5 rounded-lg font-medium text-sm flex items-center gap-2 transition-colors shadow-sm"
+        >
+          <Download className="w-4 h-4" />
+          Export Excel
+        </button>
+        <button
           onClick={() => navigate('/farmers/add')}
           className="bg-[#0D7C66] hover:bg-[#0a6354] text-white px-4 sm:px-6 py-2.5 rounded-lg font-medium text-sm flex items-center gap-2 transition-colors shadow-sm"
         >
@@ -160,11 +246,10 @@ const Farmers = () => {
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         {stats.map((stat, index) => (
-          <div 
-            key={index} 
-            className={`${stat.color} rounded-2xl p-6 ${
-              index === 2 || index === 3 ? 'text-white' : 'text-[#0D5C4D]'
-            }`}
+          <div
+            key={index}
+            className={`${stat.color} rounded-2xl p-6 ${index === 2 || index === 3 ? 'text-white' : 'text-[#0D5C4D]'
+              }`}
           >
             <div className="text-sm font-medium mb-2 opacity-90">{stat.label}</div>
             <div className="text-4xl font-bold">{stat.value}</div>
@@ -222,17 +307,16 @@ const Farmers = () => {
                   </td>
                 </tr>
               ) : farmers.map((farmer, index) => (
-                <tr 
-                  key={farmer.fid} 
-                  className={`border-b border-[#D0E0DB] hover:bg-[#F0F4F3] transition-colors ${
-                    index % 2 === 0 ? 'bg-white' : 'bg-[#F0F4F3]/30'
-                  }`}
+                <tr
+                  key={farmer.fid}
+                  className={`border-b border-[#D0E0DB] hover:bg-[#F0F4F3] transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-[#F0F4F3]/30'
+                    }`}
                 >
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-full bg-[#B8F4D8] flex items-center justify-center text-[#0D5C4D] font-semibold text-sm overflow-hidden">
                         {farmer.profile_image ? (
-                          <img 
+                          <img
                             src={`${BASE_URL}${farmer.profile_image}`}
                             alt={farmer.farmer_name}
                             className="w-full h-full object-cover"
@@ -282,16 +366,15 @@ const Farmers = () => {
                   </td>
 
                   <td className="px-6 py-4">
-                    <span className={`px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1 w-fit ${
-                      farmer.status === 'active' ? 'bg-[#4ED39A] text-white' : 'bg-red-500 text-white'
-                    }`}>
+                    <span className={`px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1 w-fit ${farmer.status === 'active' ? 'bg-[#4ED39A] text-white' : 'bg-red-500 text-white'
+                      }`}>
                       <div className="w-2 h-2 rounded-full bg-white"></div>
                       {farmer.status === 'active' ? 'Active' : 'Inactive'}
                     </span>
                   </td>
 
                   <td className="px-6 py-4">
-                    <button 
+                    <button
                       onClick={(e) => {
                         e.stopPropagation();
                         toggleDropdown(farmer.fid, e);
@@ -313,23 +396,22 @@ const Farmers = () => {
             Showing page {currentPage} of {totalPages}
           </div>
           <div className="flex items-center gap-2">
-            <button 
+            <button
               onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
               disabled={currentPage === 1}
               className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
               &lt;
             </button>
             {[...Array(totalPages)].map((_, i) => (
-              <button 
+              <button
                 key={i + 1}
                 onClick={() => setCurrentPage(i + 1)}
-                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                  currentPage === i + 1 ? 'bg-[#0D8568] text-white' : 'text-[#6B8782] hover:bg-[#D0E0DB]'
-                }`}>
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${currentPage === i + 1 ? 'bg-[#0D8568] text-white' : 'text-[#6B8782] hover:bg-[#D0E0DB]'
+                  }`}>
                 {i + 1}
               </button>
             ))}
-            <button 
+            <button
               onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
               disabled={currentPage === totalPages}
               className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
@@ -341,12 +423,12 @@ const Farmers = () => {
 
       {/* Dropdown Menu - Fixed Position Outside Table */}
       {openDropdown && (
-        <div 
+        <div
           ref={dropdownRef}
           className="fixed w-32 bg-white rounded-lg shadow-lg border border-[#D0E0DB] py-1 z-[100]"
-          style={{ 
-            top: `${dropdownPosition.top}px`, 
-            left: `${dropdownPosition.left}px` 
+          style={{
+            top: `${dropdownPosition.top}px`,
+            left: `${dropdownPosition.left}px`
           }}
         >
           <button
@@ -364,7 +446,7 @@ const Farmers = () => {
             Edit
           </button>
           <button
-            onClick={() => handleAction('delete', openDropdown, 
+            onClick={() => handleAction('delete', openDropdown,
               farmers.find(f => f.fid === openDropdown)?.farmer_name)}
             className="w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-[#F0F4F3] transition-colors flex items-center gap-2"
           >

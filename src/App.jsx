@@ -70,6 +70,8 @@ import EditLabourExcessPay from './components/admin/pages/EditLabourExcessPay'
 import DriveAttendance from './components/admin/pages/DriveAttendance'
 import ReportManagement from './components/admin/pages/ReportManagement'
 import ReportFarmer from './components/admin/pages/ReportFarmer'
+import ReportSupplier from './components/admin/pages/ReportSupplier'
+import ReportThirdParty from './components/admin/pages/ReportThirdParty'
 import ReportLabour from './components/admin/pages/ReportLabour'
 import ReportInvoice from './components/admin/pages/ReportInvoice'
 import ReportPayout from './components/admin/pages/ReportPayout'
@@ -185,6 +187,8 @@ const App = () => {
         <Route path="/payout-driver" element={<ProtectedRoute><Layout><PayoutDriver /></Layout></ProtectedRoute>} />
         <Route path="/reports" element={<ProtectedRoute><Layout><ReportManagement /></Layout></ProtectedRoute>} />
         <Route path="/reports/farmer" element={<ProtectedRoute><Layout><ReportFarmer /></Layout></ProtectedRoute>} />
+        <Route path="/reports/supplier" element={<ProtectedRoute><Layout><ReportSupplier /></Layout></ProtectedRoute>} />
+        <Route path="/reports/third-party" element={<ProtectedRoute><Layout><ReportThirdParty /></Layout></ProtectedRoute>} />
         <Route path="/reports/labour" element={<ProtectedRoute><Layout><ReportLabour /></Layout></ProtectedRoute>} />
         <Route path="/reports/invoice" element={<ProtectedRoute><Layout><ReportInvoice /></Layout></ProtectedRoute>} />
         <Route path="/reports/payout" element={<ProtectedRoute><Layout><ReportPayout /></Layout></ProtectedRoute>} />
