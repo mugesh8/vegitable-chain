@@ -211,7 +211,6 @@ const NewOrder = () => {
   useEffect(() => {
     const fetchData = async () => {
       try {
-<<<<<<< HEAD
         // Fetch customers
         const customersResponse = await getAllCustomers(1, 1000);
         const customers = customersResponse.data || [];
@@ -219,8 +218,6 @@ const NewOrder = () => {
         const sortedCustomers = customers.sort((a, b) => a.cust_id - b.cust_id);
         setAllCustomers(sortedCustomers);
         
-=======
->>>>>>> f2e373f77fb0d1340afd68d96dc151a1b8526d7e
         // First fetch packing options
         const items = await getBoxesAndBags();
         setPackingOptions(items);
@@ -236,51 +233,7 @@ const NewOrder = () => {
         const orderIdFromUrl = urlParams.get('orderId');
 
         if (!draftIdFromUrl && !orderIdFromUrl) {
-<<<<<<< HEAD
           // Don't pre-populate products - wait for customer selection
-=======
-          const defaultProducts = activeProducts.filter(p => p.default_status === true);
-          if (defaultProducts.length > 0) {
-            const formattedProducts = defaultProducts.map((product, index) => {
-              const allowedPackingTypes = product.packing_type
-                ? product.packing_type.split(',').map(p => p.trim())
-                : [];
-              
-              // Determine default packing type and box weight
-              let defaultPackingType = '';
-              let defaultBoxWeight = '';
-              let defaultBoxCapacity = '';
-              
-              if (allowedPackingTypes.length > 0) {
-                // Use first packing type as default
-                defaultPackingType = allowedPackingTypes[0];
-                
-                // Find the corresponding packing option to get box weight
-                const selectedPacking = items.find(item => item.name === defaultPackingType);
-                if (selectedPacking) {
-                  defaultBoxWeight = (parseFloat(selectedPacking.weight) || 0).toFixed(2);
-                }
-                // Use product's net_weight from product table
-                defaultBoxCapacity = (parseFloat(product.net_weight) || 0).toString();
-              }
-              
-              return {
-                id: index + 1,
-                productId: product.pid.toString(),
-                productName: product.product_name,
-                numBoxes: '',
-                packingType: defaultPackingType,
-                netWeight: '',
-                grossWeight: '',
-                boxWeight: defaultBoxWeight,
-                boxCapacity: defaultBoxCapacity,
-                showMoreDetails: false,
-                allowedPackingTypes: allowedPackingTypes
-              };
-            });
-            setProducts(formattedProducts);
-          }
->>>>>>> f2e373f77fb0d1340afd68d96dc151a1b8526d7e
         }
       } catch (error) {
         console.error('Error fetching data:', error);
