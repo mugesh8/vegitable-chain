@@ -55,7 +55,7 @@ const LabourDailyPayout = () => {
   ]);
 
   const handlePay = (date) => {
-    console.log(`Processing payment for ${date}`);
+    // console.log(`Processing payment for ${date}`);
   };
 
   const getStatusColor = (status) => {

@@ -17,11 +17,11 @@ const Dashboard = () => {
           getAllDrivers(),
           getAllLabours()
         ]);
-        console.log('Drivers response:', driversRes);
+        // console.log('Drivers response:', driversRes);
         setTotalFarmers(farmersRes.data?.length || 0);
         const drivers = driversRes.data || [];
         const activeCount = drivers.filter(d => d.status?.toLowerCase() === 'active').length;
-        console.log('Active drivers count:', activeCount);
+        // console.log('Active drivers count:', activeCount);
         setActiveDrivers(activeCount);
         setTotalLabours(laboursRes.data?.length || 0);
       } catch (error) {

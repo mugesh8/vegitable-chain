@@ -64,17 +64,17 @@ const EditDriver = () => {
       try {
         setLoading(true);
         setError(null);
-        console.log('Fetching driver with ID:', id);
+        // console.log('Fetching driver with ID:', id);
         
         if (!id) {
           throw new Error('No driver ID provided');
         }
         
         // Log the actual ID being used
-        console.log('Actual driver ID being fetched:', id);
+        // console.log('Actual driver ID being fetched:', id);
         
         const response = await getDriverById(id);
-        console.log('API Response:', response);
+        // console.log('API Response:', response);
         
         // Handle different response structures
         const driver = response.data || response;

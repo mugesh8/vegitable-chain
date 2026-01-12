@@ -47,8 +47,8 @@ const SupplierDetails = () => {
           product_name: productMap[id] || `Product ${id}`
         }));
         
-        console.log('Supplier data from API:', supplierData);
-        console.log('Profile image:', supplierData.profile_image);
+        // console.log('Supplier data from API:', supplierData);
+        // console.log('Profile image:', supplierData.profile_image);
         setSupplier({ ...supplierData, product_list: productList });
         setProducts(allProducts);
       } catch (error) {
@@ -112,7 +112,7 @@ const SupplierDetails = () => {
                 alt={supplier?.supplier_name || 'Supplier'}
                 className="w-full h-full object-cover"
                 onError={(e) => {
-                  console.log('Image failed to load:', e.target.src);
+                  //console.log('Image failed to load:', e.target.src);
                   e.target.style.display = 'none';
                 }}
               />

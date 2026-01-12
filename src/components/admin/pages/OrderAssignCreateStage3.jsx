@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { Check, ChevronDown, Truck, Package, MapPin, Plus, X } from 'lucide-react';
 import { getPresentDriversToday } from '../../../api/driverApi';
@@ -15,6 +15,7 @@ const OrderAssignCreateStage3 = () => {
   const [drivers, setDrivers] = useState([]);
   const [productRows, setProductRows] = useState([]);
   const [airports, setAirports] = useState([]);
+
   // Helper function to parse num_boxes
   const parseNumBoxes = (numBoxesStr) => {
     if (!numBoxesStr) return 0;
@@ -43,7 +44,7 @@ const OrderAssignCreateStage3 = () => {
           const assignmentResponse = await getOrderAssignment(id);
           const assignmentData = assignmentResponse.data;
 
-          console.log('Full assignment data:', assignmentData);
+          //console.log('Full assignment data:', assignmentData);
 
           // Get labour data from stage1_summary_data
           if (assignmentData.stage1_summary_data) {
@@ -52,13 +53,13 @@ const OrderAssignCreateStage3 = () => {
                 ? JSON.parse(assignmentData.stage1_summary_data)
                 : assignmentData.stage1_summary_data;
 
-              console.log('Stage 1 Summary Data:', stage1Data);
+              //console.log('Stage 1 Summary Data:', stage1Data);
               
               // Extract labour from driverAssignments
               if (stage1Data.driverAssignments) {
                 stage1Data.driverAssignments.forEach(driverGroup => {
                   driverGroup.assignments?.forEach(assignment => {
-                    const oiid = String(assignment.oiid).split('-')[0]; // Remove -remaining suffix if present
+                    const oiid = String(assignment.oiid).split('-')[0];
                     const labours = assignment.labour || [];
                     
                     if (labours.length > 0) {
@@ -75,14 +76,14 @@ const OrderAssignCreateStage3 = () => {
                 });
               }
               
-              console.log('Labour Map before conversion:', stage2LabourMap);
+              //console.log('Labour Map before conversion:', stage2LabourMap);
               
               // Convert arrays to comma-separated strings
               Object.keys(stage2LabourMap).forEach(key => {
                 stage2LabourMap[key] = stage2LabourMap[key].join(', ');
               });
               
-              console.log('Final Labour Map:', stage2LabourMap);
+              //console.log('Final Labour Map:', stage2LabourMap);
             } catch (e) {
               console.error('Error parsing stage1_summary_data:', e);
             }
@@ -101,12 +102,12 @@ const OrderAssignCreateStage3 = () => {
                 ? JSON.parse(stage2DataRaw)
                 : stage2DataRaw;
 
-              console.log('Stage 2 Data:', stage2Data);
+              //console.log('Stage 2 Data:', stage2Data);
               const productAssignments = stage2Data.productAssignments || [];
-              console.log('Product Assignments:', productAssignments);
+              //console.log('Product Assignments:', productAssignments);
               
               productAssignments.forEach(pa => {
-                console.log('Processing assignment:', pa);
+                //console.log('Processing assignment:', pa);
                 if (pa.id && pa.labourName) {
                   if (!stage2LabourMap[pa.id]) {
                     stage2LabourMap[pa.id] = [];
@@ -117,19 +118,19 @@ const OrderAssignCreateStage3 = () => {
                 }
               });
               
-              console.log('Labour Map before conversion:', stage2LabourMap);
+              //console.log('Labour Map before conversion:', stage2LabourMap);
               
               // Convert arrays to comma-separated strings
               Object.keys(stage2LabourMap).forEach(key => {
                 stage2LabourMap[key] = stage2LabourMap[key].join(', ');
               });
               
-              console.log('Final Labour Map:', stage2LabourMap);
+              //console.log('Final Labour Map:', stage2LabourMap);
             } catch (e) {
               console.error('Error parsing stage2_data:', e);
             }
           } else {
-            console.log('No stage2_data found in assignment data');
+            //console.log('No stage2_data found in assignment data');
           }
 
           // Parse stage3_data to get saved stage3 data
@@ -177,10 +178,10 @@ const OrderAssignCreateStage3 = () => {
               const totalBoxes = parseNumBoxes(item.num_boxes);
               const labourNames = stage2LabourMap[item.oiid] || '-';
               const netWeight = parseFloat(item.net_weight) || 0;
-              const boxWeight = totalBoxes * 0.5; // Assuming 0.5 kg per box
+              const boxWeight = totalBoxes * 0.5;
               const grossWeight = netWeight + boxWeight;
 
-              console.log(`Product ${item.oiid}: Labour = ${labourNames}`);
+              //console.log(`Product ${item.oiid}: Labour = ${labourNames}`);
 
               return {
                 id: `${item.oiid}-0`,
@@ -202,7 +203,7 @@ const OrderAssignCreateStage3 = () => {
               };
             });
           }
-          console.log('Final product rows:', rows);
+          //console.log('Final product rows:', rows);
           setProductRows(rows);
         }
       } catch (error) {
@@ -212,6 +213,46 @@ const OrderAssignCreateStage3 = () => {
 
     loadData();
   }, [orderData, id]);
+
+  // Helper function to get next available CT position for an airport
+  const getNextCTPositionForAirport = (airportName, currentRowId, numPkgs, currentRows) => {
+    if (!airportName) return 1;
+
+    // Get all rows assigned to this airport (excluding current row)
+    const airportRows = currentRows.filter(row => 
+      row.airportName === airportName && 
+      row.id !== currentRowId &&
+      row.ct
+    );
+
+    if (airportRows.length === 0) return 1;
+
+    // Extract all occupied ranges
+    const occupiedRanges = [];
+    airportRows.forEach(row => {
+      if (row.ct && row.ct.includes('-')) {
+        const parts = row.ct.split('-');
+        if (parts.length === 2) {
+          const start = parseInt(parts[0]);
+          const end = parseInt(parts[1]);
+          if (!isNaN(start) && !isNaN(end)) {
+            occupiedRanges.push({ start, end });
+          }
+        }
+      }
+    });
+
+    // Sort by start position
+    occupiedRanges.sort((a, b) => a.start - b.start);
+
+    // Find the highest end position and start after it
+    if (occupiedRanges.length > 0) {
+      const lastRange = occupiedRanges[occupiedRanges.length - 1];
+      return lastRange.end + 1;
+    }
+
+    return 1;
+  };
 
   // Validate CT range
   const validateCTRange = (ct, oiid, totalBoxes, currentRowId) => {
@@ -261,46 +302,57 @@ const OrderAssignCreateStage3 = () => {
     return { valid: true };
   };
 
-  const handleCTChange = (index, value) => {
+  const handleNoOfPkgsChange = (index, value) => {
     const updatedRows = [...productRows];
+    updatedRows[index].noOfPkgs = value;
 
-    updatedRows[index].ct = value;
-
-    // Calculate No of Pkgs from CT (difference between end and start)
-    if (value && value.includes('-')) {
-      const parts = value.split('-');
-      if (parts.length === 2) {
-        const startNum = parseInt(parts[0]);
-        const endNum = parseInt(parts[1]);
-        if (!isNaN(startNum) && !isNaN(endNum)) {
-          const count = endNum - startNum + 1;
-          updatedRows[index].noOfPkgs = count.toString();
+    // Auto-generate CT from No of Pkgs
+    if (value && !isNaN(parseInt(value))) {
+      const numPkgs = parseInt(value);
+      if (numPkgs > 0) {
+        const currentRow = updatedRows[index];
+        
+        // Get next available position for this airport (continuous across all products)
+        const startPosition = getNextCTPositionForAirport(
+          currentRow.airportName, 
+          currentRow.id, 
+          numPkgs,
+          updatedRows
+        );
+        
+        const endPosition = startPosition + numPkgs - 1;
+        
+        // Check if it exceeds total boxes for THIS product
+        if (endPosition - startPosition + 1 <= currentRow.totalBoxes) {
+          updatedRows[index].ct = `${startPosition}-${endPosition}`;
+        } else {
+          updatedRows[index].ct = '';
+          alert(`Cannot fit ${numPkgs} packages. Maximum available for this product: ${currentRow.totalBoxes}`);
         }
+      } else {
+        updatedRows[index].ct = '';
       }
     } else {
-      updatedRows[index].noOfPkgs = '';
+      updatedRows[index].ct = '';
     }
 
     setProductRows(updatedRows);
   };
 
-  const handleCTBlur = (index) => {
+  const handleNoOfPkgsBlur = (index) => {
     const row = productRows[index];
-    const value = row.ct;
+    const value = row.noOfPkgs;
 
     // Validate when user leaves the field
-    if (value && value.includes('-')) {
-      const parts = value.split('-');
-      if (parts.length === 2 && parts[0].trim() && parts[1].trim()) {
-        const validation = validateCTRange(value, row.oiid, row.totalBoxes, row.id);
-        if (!validation.valid) {
-          alert(validation.error);
-          // Clear invalid value
-          const updatedRows = [...productRows];
-          updatedRows[index].ct = '';
-          updatedRows[index].noOfPkgs = '';
-          setProductRows(updatedRows);
-        }
+    if (value && !isNaN(parseInt(value))) {
+      const numPkgs = parseInt(value);
+      if (numPkgs > row.totalBoxes) {
+        alert(`Number of packages (${numPkgs}) cannot exceed total boxes (${row.totalBoxes})`);
+        // Clear invalid value
+        const updatedRows = [...productRows];
+        updatedRows[index].noOfPkgs = '';
+        updatedRows[index].ct = '';
+        setProductRows(updatedRows);
       }
     }
   };
@@ -335,13 +387,45 @@ const OrderAssignCreateStage3 = () => {
       updatedRows[index].airportLocation = '';
     }
 
+    // Recalculate CT if packages are already assigned
+    if (updatedRows[index].noOfPkgs) {
+      const numPkgs = parseInt(updatedRows[index].noOfPkgs);
+      if (numPkgs > 0) {
+        const currentRow = updatedRows[index];
+        
+        // Get next available position for this airport (continuous across all products)
+        const startPosition = getNextCTPositionForAirport(
+          airportName, 
+          currentRow.id, 
+          numPkgs,
+          updatedRows
+        );
+        
+        const endPosition = startPosition + numPkgs - 1;
+        
+        if (endPosition - startPosition + 1 <= currentRow.totalBoxes) {
+          updatedRows[index].ct = `${startPosition}-${endPosition}`;
+        } else {
+          updatedRows[index].ct = '';
+        }
+      }
+    }
+
     setProductRows(updatedRows);
   };
 
   const handleAddCTAssignment = (oiid) => {
     const sameProductRows = productRows.filter(row => row.oiid === oiid);
-    const maxAssignmentIndex = Math.max(...sameProductRows.map(row => row.assignmentIndex), -1);
     const firstRow = sameProductRows[0];
+    
+    // Check if total packages already equals total boxes/bags
+    const totalPackages = sameProductRows.reduce((sum, row) => sum + (parseInt(row.noOfPkgs) || 0), 0);
+    if (totalPackages >= firstRow.totalBoxes) {
+      alert(`Cannot add more assignments. Total packages (${totalPackages}) already equals or exceeds total boxes/bags (${firstRow.totalBoxes}). Product is fully packed.`);
+      return;
+    }
+
+    const maxAssignmentIndex = Math.max(...sameProductRows.map(row => row.assignmentIndex), -1);
 
     const newRow = {
       id: `${oiid}-${maxAssignmentIndex + 1}`,
@@ -500,7 +584,7 @@ const OrderAssignCreateStage3 = () => {
         summaryData
       };
 
-      console.log('Saving stage 3 data:', JSON.stringify(stage3Data, null, 2));
+      //console.log('Saving stage 3 data:', JSON.stringify(stage3Data, null, 2));
       await updateStage3Assignment(id, stage3Data);
       alert('Airport delivery assigned successfully!');
       navigate(`/order-assign/stage4/${id}`, { state: { orderData } });
@@ -529,7 +613,7 @@ const OrderAssignCreateStage3 = () => {
             </thead>
             <tbody>
               <tr>
-                <td className="px-4 py-3 text-sm text-left text-gray-900">{orderData?.oid || id}</td>
+                <td className="px-4 py-3 text-sm text-left text-gray-900">{orderData?.order_auto_id || id}</td>
                 <td className="px-4 py-3 text-sm text-left text-gray-900">{orderData?.customer_name || 'N/A'}</td>
                 <td className="px-4 py-3 text-sm text-left text-gray-900">{orderData?.items?.length || 0} Items</td>
                 <td className="px-4 py-3">
@@ -577,7 +661,7 @@ const OrderAssignCreateStage3 = () => {
       {/* Airport Delivery Assignment Section */}
       <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
         <h2 className="text-lg font-semibold text-gray-900 mb-2">Stage 3: Airport Delivery Assignment</h2>
-        <p className="text-sm text-gray-600 mb-6">Assign CT, packages, and drivers for each product</p>
+        <p className="text-sm text-gray-600 mb-6">Assign CT, packages, and drivers for each product (CT numbers are continuous per airport)</p>
 
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -587,8 +671,8 @@ const OrderAssignCreateStage3 = () => {
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Gross Weight</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Assigned Labour</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Total Boxes/Bags</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">CT</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">No of Pkgs</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">CT (Auto)</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Airport Name</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Airport Location</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Select Driver</th>
@@ -629,16 +713,18 @@ const OrderAssignCreateStage3 = () => {
                     )}
                     <td className="px-4 py-4">
                       <input
-                        type="text"
-                        value={row.ct}
-                        onChange={(e) => handleCTChange(index, e.target.value)}
-                        onBlur={() => handleCTBlur(index)}
-                        placeholder="e.g., 1-3"
+                        type="number"
+                        value={row.noOfPkgs}
+                        onChange={(e) => handleNoOfPkgsChange(index, e.target.value)}
+                        onBlur={() => handleNoOfPkgsBlur(index)}
+                        placeholder="Enter packages"
+                        min="1"
+                        max={row.totalBoxes}
                         className="w-28 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
                       />
                     </td>
                     <td className="px-4 py-4">
-                      <span className="text-sm text-gray-900">{row.noOfPkgs || '-'}</span>
+                      <span className="text-sm text-gray-900 font-medium">{row.ct || '-'}</span>
                     </td>
                     <td className="px-4 py-4">
                       <div className="relative">
@@ -896,7 +982,6 @@ const OrderAssignCreateStage3 = () => {
                 }
               });
 
-              // Build global airport code map across all drivers
               const globalAirportCodeMap = {};
               const allAirports = [...new Set(productRows.filter(p => p.airportName).map(p => p.airportName))];
               const customerName = orderData?.customer_name || '';

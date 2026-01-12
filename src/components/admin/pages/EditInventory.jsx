@@ -53,7 +53,7 @@ const EditInventory = ({ item, onClose, onUpdate, onDelete }) => {
     if (formData.category === 'Tape') {
       if (!formData.color.trim()) newErrors.color = 'Color is required for tape';
     } else {
-      if (!formData.weight || formData.weight <= 0) newErrors.weight = 'Valid weight/quantity is required';
+      if (formData.weight === '' || formData.weight < 0) newErrors.weight = 'Valid weight/quantity is required';
       if (!formData.unit) newErrors.unit = 'Unit type is required';
     }
 

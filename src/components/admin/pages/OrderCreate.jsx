@@ -1,10 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
-import { X } from 'lucide-react';
+import { X, GripVertical } from 'lucide-react';
 import { createOrder, createDraft, getDraftById, updateDraft, deleteDraft, getOrderById, updateOrder } from '../../../api/orderApi';
 import { getAllProducts } from '../../../api/productApi';
 import { getBoxesAndBags } from '../../../api/inventoryApi';
+import { getAllCustomers } from '../../../api/customerApi';
+import { getPreferencesByCustomer } from '../../../api/customerProductPreferenceApi';
 
 const NewOrder = () => {
   const navigate = useNavigate();
@@ -39,6 +41,7 @@ const NewOrder = () => {
   const [packingOptions, setPackingOptions] = useState([]);
   const [errors, setErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [allCustomers, setAllCustomers] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState({});
   const [suggestionValue, setSuggestionValue] = useState({});
   const suggestionsRef = useRef(null);
@@ -49,6 +52,7 @@ const NewOrder = () => {
   const inputRefs = useRef({});
   const [draftId, setDraftId] = useState(null);
   const [orderId, setOrderId] = useState(null);
+  const [draggedIndex, setDraggedIndex] = useState(null);
 
   const toggleMoreDetails = (id) => {
     setProducts(prev =>
@@ -205,8 +209,20 @@ const NewOrder = () => {
   }, []);
 
   useEffect(() => {
-    const fetchProducts = async () => {
+    const fetchData = async () => {
       try {
+        // Fetch customers
+        const customersResponse = await getAllCustomers(1, 1000);
+        const customers = customersResponse.data || [];
+        // Sort customers by cust_id in ascending order (oldest first)
+        const sortedCustomers = customers.sort((a, b) => a.cust_id - b.cust_id);
+        setAllCustomers(sortedCustomers);
+        
+        // First fetch packing options
+        const items = await getBoxesAndBags();
+        setPackingOptions(items);
+        
+        // Then fetch products
         const response = await getAllProducts(1, 1000);
         const activeProducts = (response.data || []).filter(p => p.product_status === 'active');
         setAllProducts(activeProducts);
@@ -217,50 +233,19 @@ const NewOrder = () => {
         const orderIdFromUrl = urlParams.get('orderId');
 
         if (!draftIdFromUrl && !orderIdFromUrl) {
-          const defaultProducts = activeProducts.filter(p => p.default_status === true);
-          if (defaultProducts.length > 0) {
-            const formattedProducts = defaultProducts.map((product, index) => ({
-              id: index + 1,
-              productId: product.pid.toString(),
-              productName: `${product.pid} - ${product.product_name}`,
-              numBoxes: '',
-              packingType: '',
-              netWeight: '',
-              grossWeight: '',
-              boxWeight: '',
-              boxCapacity: '',
-              showMoreDetails: false,
-              allowedPackingTypes: product.packing_type
-                ? product.packing_type.split(',').map(p => p.trim())
-                : []
-            }));
-            setProducts(formattedProducts);
-          }
+          // Don't pre-populate products - wait for customer selection
         }
       } catch (error) {
-        console.error('Error fetching products:', error);
+        console.error('Error fetching data:', error);
       }
     };
 
-    fetchProducts();
-  }, []);
-
-  useEffect(() => {
-    const fetchPackingOptions = async () => {
-      try {
-        const items = await getBoxesAndBags();
-        setPackingOptions(items);
-      } catch (error) {
-        console.error('Error fetching packing options:', error);
-      }
-    };
-
-    fetchPackingOptions();
+    fetchData();
   }, []);
 
   // Update allowedPackingTypes for existing products when allProducts is loaded
   useEffect(() => {
-    if (allProducts.length > 0) {
+    if (allProducts.length > 0 && packingOptions.length > 0) {
       setProducts(prev =>
         prev.map(product => {
           if (product.productId && !product.allowedPackingTypes) {
@@ -269,9 +254,32 @@ const NewOrder = () => {
             const fullProduct = allProducts.find(p => p.pid.toString() === numericId);
 
             if (fullProduct && fullProduct.packing_type) {
+              const allowedPackingTypes = fullProduct.packing_type.split(',').map(p => p.trim());
+              
+              // Determine default packing type and box weight
+              let defaultPackingType = product.packingType || '';
+              let defaultBoxWeight = product.boxWeight || '';
+              
+              if (allowedPackingTypes.length > 0 && !defaultPackingType) {
+                // Use first packing type as default if not already set
+                defaultPackingType = allowedPackingTypes[0];
+                
+                // Find the corresponding packing option to get box weight
+                const selectedPacking = packingOptions.find(item => item.name === defaultPackingType);
+                if (selectedPacking) {
+                  defaultBoxWeight = (parseFloat(selectedPacking.weight) || 0).toFixed(2);
+                }
+              }
+              
+              // Use product's net_weight from product table
+              const productNetWeight = (parseFloat(fullProduct.net_weight) || 0).toString();
+              
               return {
                 ...product,
-                allowedPackingTypes: fullProduct.packing_type.split(',').map(p => p.trim())
+                allowedPackingTypes: allowedPackingTypes,
+                packingType: defaultPackingType,
+                boxWeight: defaultBoxWeight,
+                boxCapacity: productNetWeight
               };
             }
           }
@@ -279,7 +287,7 @@ const NewOrder = () => {
         })
       );
     }
-  }, [allProducts]);
+  }, [allProducts, packingOptions]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -319,6 +327,131 @@ const NewOrder = () => {
     }
   };
 
+  const handleCustomerChange = async (e) => {
+    const customerId = e.target.value;
+    
+    // Reset products when customer changes or is deselected
+    if (!customerId) {
+      setFormData(prev => ({
+        ...prev,
+        customerName: '',
+        customerId: ''
+      }));
+      setProducts([{
+        id: 1,
+        productId: '',
+        productName: '',
+        numBoxes: '',
+        packingType: '',
+        netWeight: '',
+        grossWeight: '',
+        boxWeight: '',
+        boxCapacity: '',
+        showMoreDetails: false,
+        allowedPackingTypes: []
+      }]);
+      return;
+    }
+    
+    const customer = allCustomers.find(c => c.cust_id.toString() === customerId);
+    
+    if (customer) {
+      setFormData(prev => ({
+        ...prev,
+        customerName: customer.customer_name,
+        customerId: customer.cust_id
+      }));
+
+      try {
+        const preferences = await getPreferencesByCustomer(customer.cust_id);
+        if (preferences.success && preferences.data && preferences.data.length > 0) {
+          const preferredProducts = preferences.data.map((pref, index) => {
+            const product = allProducts.find(p => p.pid === pref.product_id);
+            if (!product) return null;
+
+            const allowedPackingTypes = product.packing_type
+              ? product.packing_type.split(',').map(p => p.trim())
+              : [];
+
+            let defaultPackingType = '';
+            let defaultBoxWeight = '';
+            let defaultBoxCapacity = '';
+
+            if (allowedPackingTypes.length > 0) {
+              defaultPackingType = allowedPackingTypes[0];
+              const selectedPacking = packingOptions.find(item => item.name === defaultPackingType);
+              if (selectedPacking) {
+                defaultBoxWeight = (parseFloat(selectedPacking.weight) || 0).toFixed(2);
+              }
+              defaultBoxCapacity = (parseFloat(product.net_weight) || 0).toString();
+            }
+
+            return {
+              id: index + 1,
+              productId: product.pid.toString(),
+              productName: product.product_name,
+              numBoxes: '',
+              packingType: defaultPackingType,
+              netWeight: '',
+              grossWeight: '',
+              boxWeight: defaultBoxWeight,
+              boxCapacity: defaultBoxCapacity,
+              showMoreDetails: false,
+              allowedPackingTypes: allowedPackingTypes
+            };
+          }).filter(p => p !== null);
+
+          if (preferredProducts.length > 0) {
+            setProducts(preferredProducts);
+          } else {
+            setProducts([{
+              id: 1,
+              productId: '',
+              productName: '',
+              numBoxes: '',
+              packingType: '',
+              netWeight: '',
+              grossWeight: '',
+              boxWeight: '',
+              boxCapacity: '',
+              showMoreDetails: false,
+              allowedPackingTypes: []
+            }]);
+          }
+        } else {
+          setProducts([{
+            id: 1,
+            productId: '',
+            productName: '',
+            numBoxes: '',
+            packingType: '',
+            netWeight: '',
+            grossWeight: '',
+            boxWeight: '',
+            boxCapacity: '',
+            showMoreDetails: false,
+            allowedPackingTypes: []
+          }]);
+        }
+      } catch (error) {
+        console.error('Error fetching customer preferences:', error);
+        setProducts([{
+          id: 1,
+          productId: '',
+          productName: '',
+          numBoxes: '',
+          packingType: '',
+          netWeight: '',
+          grossWeight: '',
+          boxWeight: '',
+          boxCapacity: '',
+          showMoreDetails: false,
+          allowedPackingTypes: []
+        }]);
+      }
+    }
+  };
+
   // Extract box capacity from packing type name (e.g., "5kg Box" -> 5)
   const getBoxCapacity = (packingType) => {
     if (!packingType) return 0;
@@ -345,13 +478,12 @@ const NewOrder = () => {
           // Handle product name suggestions
           if (field === 'productName') {
             const matchingProduct = allProducts.find(p =>
-              `${p.pid} - ${p.product_name}`.toLowerCase() === value.toLowerCase() ||
               p.product_name.toLowerCase() === value.toLowerCase()
             );
 
             if (matchingProduct) {
               updatedProduct.productId = matchingProduct.pid.toString();
-              updatedProduct.productName = `${matchingProduct.pid} - ${matchingProduct.product_name}`;
+              updatedProduct.productName = matchingProduct.product_name;
             }
 
             if (value.length > 0) {
@@ -380,16 +512,19 @@ const NewOrder = () => {
 
             if (selectedPacking) {
               const actualBoxWeight = parseFloat(selectedPacking.weight) || 0;
-              const boxCapacity = getBoxCapacity(selectedPacking.name);
+              
+              // Get product's net_weight from product table
+              const selectedProduct = allProducts.find(p => p.pid === parseInt(updatedProduct.productId));
+              const productNetWeight = selectedProduct?.net_weight ? parseFloat(selectedProduct.net_weight) : 0;
 
               updatedProduct.boxWeight = actualBoxWeight.toFixed(2);
-              updatedProduct.boxCapacity = boxCapacity.toString();
+              updatedProduct.boxCapacity = productNetWeight.toString();
 
               const numBoxes = parseFloat(updatedProduct.numBoxes) || 0;
 
               // Calculate net weight from number of boxes if available
-              if (boxCapacity > 0 && numBoxes > 0) {
-                const calculatedNetWeight = numBoxes * boxCapacity;
+              if (productNetWeight > 0 && numBoxes > 0) {
+                const calculatedNetWeight = numBoxes * productNetWeight;
                 updatedProduct.netWeight = calculatedNetWeight.toFixed(2);
                 updatedProduct.grossWeight = (calculatedNetWeight + (numBoxes * actualBoxWeight)).toFixed(2);
               }
@@ -476,25 +611,59 @@ const NewOrder = () => {
 
   const selectProductSuggestion = (id, product) => {
     // Debug: Log the product data
-    console.log('Selected product:', product);
-    console.log('Product packing_type:', product.packing_type);
+    // console.log('Selected product:', product);
+    // console.log('Product packing_type:', product.packing_type);
 
     // Parse the product's packing_type field to get allowed packing types
     const allowedPackingTypes = product.packing_type
       ? product.packing_type.split(',').map(p => p.trim())
       : [];
 
-    console.log('Parsed allowedPackingTypes:', allowedPackingTypes);
+    //console.log('Parsed allowedPackingTypes:', allowedPackingTypes);
+
+    // Determine default packing type and box weight
+    let defaultPackingType = '';
+    let defaultBoxWeight = '';
+    
+    if (allowedPackingTypes.length > 0) {
+      // Use first packing type as default (for both single and multiple)
+      defaultPackingType = allowedPackingTypes[0];
+      
+      // Find the corresponding packing option to get box weight
+      const selectedPacking = packingOptions.find(item => item.name === defaultPackingType);
+      if (selectedPacking) {
+        defaultBoxWeight = parseFloat(selectedPacking.weight) || 0;
+      }
+    }
 
     setProducts(prev =>
       prev.map(p => {
         if (p.id === id) {
-          return {
+          const updatedProduct = {
             ...p,
             productId: product.pid.toString(),
-            productName: `${product.pid} - ${product.product_name}`,
-            allowedPackingTypes: allowedPackingTypes
+            productName: product.product_name,
+            allowedPackingTypes: allowedPackingTypes,
+            packingType: defaultPackingType,
+            boxWeight: defaultBoxWeight ? defaultBoxWeight.toFixed(2) : ''
           };
+          
+          // If we have a default packing type, calculate box capacity and weights
+          if (defaultPackingType) {
+            // Use product's net_weight from product table
+            const productNetWeight = parseFloat(product.net_weight) || 0;
+            updatedProduct.boxCapacity = productNetWeight.toString();
+            
+            // If we have numBoxes, calculate net and gross weight
+            const numBoxes = parseFloat(updatedProduct.numBoxes) || 0;
+            if (productNetWeight > 0 && numBoxes > 0) {
+              const calculatedNetWeight = numBoxes * productNetWeight;
+              updatedProduct.netWeight = calculatedNetWeight.toFixed(2);
+              updatedProduct.grossWeight = (calculatedNetWeight + (numBoxes * defaultBoxWeight)).toFixed(2);
+            }
+          }
+          
+          return updatedProduct;
         }
         return p;
       })
@@ -522,6 +691,27 @@ const NewOrder = () => {
     if (products.length > 1) {
       setProducts(products.filter((product) => product.id !== id));
     }
+  };
+
+  const handleDragStart = (index) => {
+    setDraggedIndex(index);
+  };
+
+  const handleDragOver = (e, index) => {
+    e.preventDefault();
+    if (draggedIndex === null || draggedIndex === index) return;
+
+    const newProducts = [...products];
+    const draggedItem = newProducts[draggedIndex];
+    newProducts.splice(draggedIndex, 1);
+    newProducts.splice(index, 0, draggedItem);
+
+    setProducts(newProducts);
+    setDraggedIndex(index);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
   };
 
   const validateForm = () => {
@@ -736,16 +926,21 @@ const NewOrder = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Customer Name <span className="text-red-500">*</span>
                 </label>
-                <input
-                  type="text"
-                  name="customerName"
-                  value={formData.customerName}
-                  onChange={handleInputChange}
-                  placeholder="Enter customer or store name"
+                <select
+                  name="customerId"
+                  value={formData.customerId}
+                  onChange={handleCustomerChange}
                   className={`w-full px-4 py-2.5 border rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent ${errors.customerName ? 'border-red-500' : 'border-gray-300'
                     }`}
                   required
-                />
+                >
+                  <option value="">Select a customer</option>
+                  {allCustomers.map(customer => (
+                    <option key={customer.cust_id} value={customer.cust_id}>
+                      {customer.customer_name}
+                    </option>
+                  ))}
+                </select>
                 {errors.customerName && (
                   <p className="mt-1 text-sm text-red-500">{errors.customerName}</p>
                 )}
@@ -930,18 +1125,27 @@ const NewOrder = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {products.map((product) => (
+                  {products.map((product, index) => (
                     <React.Fragment key={product.id}>
-                      <tr className="border-b border-gray-100">
-                        <td className="px-4 py-3">
-                          <input
-                            ref={(el) => (inputRefs.current[product.id] = el)}
-                            type="text"
-                            value={product.productName}
-                            onChange={(e) => handleProductChange(product.id, 'productName', e.target.value)}
-                            placeholder="Type product name"
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent"
-                          />
+                      <tr 
+                        className={`border-b border-gray-100 ${draggedIndex === index ? 'opacity-50' : ''}`}
+                        draggable
+                        onDragStart={() => handleDragStart(index)}
+                        onDragOver={(e) => handleDragOver(e, index)}
+                        onDragEnd={handleDragEnd}
+                      >
+                        <td className="px-2 py-3">
+                          <div className="flex items-center gap-2">
+                            <GripVertical className="w-5 h-5 text-gray-400 cursor-move" />
+                            <input
+                              ref={(el) => (inputRefs.current[product.id] = el)}
+                              type="text"
+                              value={product.productName}
+                              onChange={(e) => handleProductChange(product.id, 'productName', e.target.value)}
+                              placeholder="Type product name"
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent"
+                            />
+                          </div>
                           {showProductSuggestions[product.id] && allProducts.length > 0 && suggestionPosition[product.id] && createPortal(
                             <div
                               ref={productSuggestionsRef}
@@ -955,14 +1159,22 @@ const NewOrder = () => {
                               }}
                               className="mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-40 overflow-y-auto"
                             >
-                              {allProducts.map((prod) => (
+                              {allProducts
+                                .filter(prod => {
+                                  // Filter out products that are already selected in other rows
+                                  const selectedProductIds = products
+                                    .filter(p => p.id !== product.id && p.productId) // Exclude current row and empty selections
+                                    .map(p => p.productId.toString());
+                                  return !selectedProductIds.includes(prod.pid.toString());
+                                })
+                                .map((prod) => (
                                 <button
                                   key={prod.pid}
                                   type="button"
                                   className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 whitespace-nowrap"
                                   onClick={() => selectProductSuggestion(product.id, prod)}
                                 >
-                                  {prod.pid} - {prod.product_name}
+                                  {prod.product_name}
                                 </button>
                               ))}
                             </div>,

@@ -46,25 +46,25 @@ const DriverManagement = () => {
     try {
       setLoading(true);
       const response = await getAllDrivers();
-      console.log('Driver list response:', response);
+      // console.log('Driver list response:', response);
       
       // Check if response has data property
       const driversData = response.data || response;
-      console.log('Drivers data:', driversData);
+      // console.log('Drivers data:', driversData);
       
       // Log the raw driver data to understand ID formats
-      console.log('Raw driver data:', driversData);
+      // console.log('Raw driver data:', driversData);
       
       // Transform API response to match existing data structure
       const transformedDrivers = driversData.map(driver => {
-        console.log('Processing driver:', driver);
+        // console.log('Processing driver:', driver);
         // Log all possible ID fields
-        console.log('Possible ID fields:', {
-          driver_id: driver.driver_id,
-          id: driver.id,
-          did: driver.did,
-          _id: driver._id
-        });
+        // console.log('Possible ID fields:', {
+        //   driver_id: driver.driver_id,
+        //   id: driver.id,
+        //   did: driver.did,
+        //   _id: driver._id
+        // });
         
         return {
           id: driver.did || driver.driver_id || driver.id || driver._id,
@@ -83,7 +83,7 @@ const DriverManagement = () => {
           workingHours: driver.working_hours ? `${driver.working_hours} hrs` : '0 hrs'
         };
       });
-      console.log('Transformed drivers:', transformedDrivers);
+      // console.log('Transformed drivers:', transformedDrivers);
       setDrivers(transformedDrivers);
       setError(null);
     } catch (err) {
@@ -137,11 +137,11 @@ const DriverManagement = () => {
   };
 
   const handleAction = (action, driverId, driverName) => {
-    console.log('Handle action:', action, 'Driver ID:', driverId, 'Driver Name:', driverName);
+    // console.log('Handle action:', action, 'Driver ID:', driverId, 'Driver Name:', driverName);
     if (action === 'view') {
       navigate(`/drivers/${driverId}`);
     } else if (action === 'edit') {
-      console.log('Navigating to edit driver with ID:', driverId);
+      // console.log('Navigating to edit driver with ID:', driverId);
       // Check if driverId is valid
       if (!driverId) {
         console.error('Invalid driver ID:', driverId);

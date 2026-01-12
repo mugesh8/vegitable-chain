@@ -63,7 +63,7 @@ const Navbar = ({ onMenuClick }) => {
     if (path === '/reports/invoice') return 'Invoice Report';
     if (path === '/reports/payout') return 'Payout Report';
     if (path === '/reports/order') return 'Order Report';
-    if (path === '/products/add') return 'Add Product';
+    if (path === '/products/add') return 'All Products';
     if (path.match(/^\/stock\/[^/]+$/)) return 'Reassign Stock';
     if (path === '/stock') return 'Stock Management';
     if (path === '/settings') return 'Settings';
