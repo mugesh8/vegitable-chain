@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { registerAdmin } from '../../../api/adminApi';
 
+
 const AddAdmin = ({ onClose, onAdd }) => {
   const [formData, setFormData] = useState({
     email: '',
