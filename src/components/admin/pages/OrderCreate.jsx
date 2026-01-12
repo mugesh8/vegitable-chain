@@ -159,7 +159,9 @@ const NewOrder = () => {
               orderReceivedDate: order.order_received_date || '',
               packingDate: order.packing_date || '',
               packingDay: order.packing_day || '',
-              orderType: order.order_type || 'local',
+              orderType: (order.order_type === 'LOCAL GRADE ORDER' || order.order_type === 'BOX ORDER') 
+                ? (order.order_type === 'LOCAL GRADE ORDER' ? 'local' : 'flight')
+                : (order.order_type || 'local'),
               detailsComment: order.details_comment || ''
             });
 

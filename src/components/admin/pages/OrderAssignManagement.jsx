@@ -259,7 +259,6 @@ const OrderAssignManagement = () => {
                       // For flight orders, check if stage1 is completed
                       const shouldShowEdit = isLocalOrder ? hasLocalOrderData : isStage1Completed;
 
-                      console.log(`Order ${order.oid}: type=${order.order_type}, localOrderData=`, localOrderData, `hasLocalData=${hasLocalOrderData}, stage1=${isStage1Completed}, showEdit=${shouldShowEdit}`);
                       //console.log(`Order ${order.oid}: type=${order.order_type}, localOrderData=`, localOrderData, `hasLocalData=${hasLocalOrderData}, stage1=${isStage1Completed}, showEdit=${shouldShowEdit}`);
 
                       if (shouldShowEdit) {
