@@ -569,6 +569,7 @@ const AddProduct = () => {
               className={`px-5 py-2.5 rounded-lg font-medium transition-all text-sm ${activeTab === 'category' ? 'bg-[#0D7C66] text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'}`}
             >
               All Category
+<<<<<<< HEAD
             </button>
             <button
               onClick={() => {
@@ -580,6 +581,8 @@ const AddProduct = () => {
               className={`px-5 py-2.5 rounded-lg font-medium transition-all text-sm ${activeTab === 'customerOrder' ? 'bg-[#0D7C66] text-white shadow-md' : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'}`}
             >
               Customer Product Order
+=======
+>>>>>>> f2e373f77fb0d1340afd68d96dc151a1b8526d7e
             </button>
           </div>
         )}

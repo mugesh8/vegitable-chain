@@ -38,7 +38,11 @@ const Sidebar = ({ isOpen, onClose }) => {
     { icon: Package, label: 'Suppliers', path: '/suppliers' },
     { icon: UserCheck, label: 'Third Party', path: '/third-party' },
     { icon: DollarSign, label: 'Labour', path: '/labour' },
+<<<<<<< HEAD
     { icon: Plus, label: 'All Products', path: '/products/add' },
+=======
+    { icon: Plus, label: 'All Product', path: '/products/add' },
+>>>>>>> f2e373f77fb0d1340afd68d96dc151a1b8526d7e
     { icon: ShoppingCart, label: 'Orders', path: '/orders' },
     { icon: ClipboardList, label: 'Order Assign', path: '/order-assign' },
     { icon: Archive, label: 'Stock Management', path: '/stock' },
