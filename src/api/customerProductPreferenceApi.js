@@ -18,8 +18,5 @@ export const updatePreference = async (customer_id, product_id, data) => {
 export const deletePreference = async (customer_id, product_id) => {
   const response = await api.delete(`customer-product/preferences/${customer_id}/${product_id}`);
   return response.data;
-<<<<<<< HEAD
 };
-=======
-};
->>>>>>> 44a2c41 (12/01/2026)
+
