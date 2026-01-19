@@ -20,7 +20,7 @@ const SupplierDashboard = () => {
   const [totalPages, setTotalPages] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOrder, setSortOrder] = useState('recent');
-  const itemsPerPage = 10;
+  const itemsPerPage = 7;
 
   useEffect(() => {
     const fetchData = async () => {

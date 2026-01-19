@@ -407,24 +407,18 @@ const DriverAirportDeliveryPage = () => {
             onClick={() => navigate(`/drivers/${id}/local-pickups`)}
             className="px-6 py-2.5 rounded-lg font-medium transition-all text-sm whitespace-nowrap bg-white text-gray-600 hover:bg-gray-50 border border-gray-200"
           >
-            Local Pickups
+            LOCAL GRADE ORDER
           </button>
           <button
             className="px-6 py-2.5 rounded-lg font-medium transition-all text-sm whitespace-nowrap bg-[#0D7C66] text-white shadow-md"
           >
-            Line Airport
+            BOX ORDER
           </button>
           <button
             onClick={() => navigate('/fuel-expense-management')}
             className="px-6 py-2.5 rounded-lg font-medium transition-all text-sm bg-white text-gray-600 hover:bg-gray-50 border border-gray-200 whitespace-nowrap"
           >
             Fuel Expenses
-          </button>
-          <button
-            onClick={() => navigate('/excess-km-management')}
-            className="px-6 py-2.5 rounded-lg font-medium transition-all text-sm bg-white text-gray-600 hover:bg-gray-50 border border-gray-200 whitespace-nowrap"
-          >
-            Excess KM
           </button>
           <button
             onClick={() => navigate('/advance-pay-management')}

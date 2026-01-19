@@ -24,7 +24,7 @@ const PackingInventory = () => {
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: null, name: '' });
 
   const categories = ['All', 'Boxes', 'Bags', 'Tape', 'Paper', 'Plastic Covers'];
-  const itemsPerPage = 10;
+  const itemsPerPage = 7;
 
   useEffect(() => {
     fetchInventory();
@@ -134,8 +134,8 @@ const PackingInventory = () => {
           <button
             onClick={() => navigate('/settings/inventory-company')}
             className={`px-6 py-2.5 rounded-lg font-medium text-sm transition-colors ${location.pathname === '/settings/inventory-company'
-                ? 'bg-[#0D7C66] text-white'
-                : 'bg-[#D4F4E8] text-[#0D5C4D] hover:bg-[#B8F4D8]'
+              ? 'bg-[#0D7C66] text-white'
+              : 'bg-[#D4F4E8] text-[#0D5C4D] hover:bg-[#B8F4D8]'
               }`}
           >
             Inventory Company
@@ -178,8 +178,7 @@ const PackingInventory = () => {
           </button>
           <button
             onClick={() => navigate('/settings/customers')}
-            className={`px-6 py-2.5 rounded-lg font-medium text-sm transition-colors ${
-              location.pathname === '/settings/customers'
+            className={`px-6 py-2.5 rounded-lg font-medium text-sm transition-colors ${location.pathname === '/settings/customers'
                 ? 'bg-[#0D7C66] text-white'
                 : 'bg-[#D4F4E8] text-[#0D5C4D] hover:bg-[#B8F4D8]'
               }`}
@@ -394,7 +393,7 @@ const PackingInventory = () => {
             className="fixed inset-0 z-10"
             onClick={() => setOpenActionMenu(null)}
           />
-          <div 
+          <div
             className="fixed w-32 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20"
             style={{ top: `${menuPosition.top}px`, left: `${menuPosition.left}px` }}
           >

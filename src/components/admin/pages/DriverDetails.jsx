@@ -9,6 +9,14 @@ const DriverDetailsPage = () => {
   const [driverInfo, setDriverInfo] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [activeTab, setActiveTab] = useState('details');
+  const [kmFormData, setKmFormData] = useState({
+    date: new Date().toISOString().split('T')[0],
+    driverName: '',
+    vehicleNumber: '',
+    startKm: '',
+    endKm: ''
+  });
 
   useEffect(() => {
     const fetchDriver = async () => {
@@ -51,6 +59,12 @@ const DriverDetailsPage = () => {
             rating: driver.rating || '0'
           }
         });
+        // Set vehicle number and driver name in KM form
+        setKmFormData(prev => ({
+          ...prev,
+          driverName: driver.driver_name || driver.name || '',
+          vehicleNumber: driver.vehicle_number || ''
+        }));
       } catch (err) {
         setError('Failed to load driver details');
       } finally {
@@ -87,33 +101,40 @@ const DriverDetailsPage = () => {
         {/* Tabs */}
         <div className="flex gap-2 mb-6 overflow-x-auto">
           <button
-            className="px-6 py-2.5 rounded-lg font-medium transition-all text-sm whitespace-nowrap bg-[#0D7C66] text-white shadow-md"
+            onClick={() => setActiveTab('details')}
+            className={`px-6 py-2.5 rounded-lg font-medium transition-all text-sm whitespace-nowrap ${activeTab === 'details'
+              ? 'bg-[#0D7C66] text-white shadow-md'
+              : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
+              }`}
           >
             Driver Details
+          </button>
+          <button
+            onClick={() => setActiveTab('km')}
+            className={`px-6 py-2.5 rounded-lg font-medium transition-all text-sm whitespace-nowrap ${activeTab === 'km'
+              ? 'bg-[#0D7C66] text-white shadow-md'
+              : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
+              }`}
+          >
+            Start KM/End KM
           </button>
           <button
             onClick={() => navigate(`/drivers/${id}/local-pickups`)}
             className="px-6 py-2.5 rounded-lg font-medium transition-all text-sm whitespace-nowrap bg-white text-gray-600 hover:bg-gray-50 border border-gray-200"
           >
-            Local Pickups
+            LOCAL GRADE ORDER
           </button>
           <button
             onClick={() => navigate(`/drivers/${id}/airport`)}
             className="px-6 py-2.5 rounded-lg font-medium transition-all text-sm bg-white text-gray-600 hover:bg-gray-50 border border-gray-200 whitespace-nowrap"
           >
-            Line Airport
+            BOX ORDER
           </button>
           <button
-            onClick={() => navigate('/fuel-expense-management')}
+            onClick={() => navigate('/fuel-expense-management', { state: { driverId: id } })}
             className="px-6 py-2.5 rounded-lg font-medium transition-all text-sm bg-white text-gray-600 hover:bg-gray-50 border border-gray-200 whitespace-nowrap"
           >
             Fuel Expenses
-          </button>
-          <button
-            onClick={() => navigate('/excess-km-management')}
-            className="px-6 py-2.5 rounded-lg font-medium transition-all text-sm bg-white text-gray-600 hover:bg-gray-50 border border-gray-200 whitespace-nowrap"
-          >
-            Excess KM
           </button>
           <button
             onClick={() => navigate('/advance-pay-management')}
@@ -136,202 +157,333 @@ const DriverDetailsPage = () => {
         </div>
 
         {/* Content Area */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 sm:p-8">
-          <h2 className="text-2xl font-bold text-gray-900 mb-6">Driver Information</h2>
+        {activeTab === 'details' && (
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 sm:p-8">
+            <h2 className="text-2xl font-bold text-gray-900 mb-6">Driver Information</h2>
 
-          {/* Personal Information */}
-          <div className="mb-8">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Personal Information</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div>
-                <label className="block text-sm text-gray-500 mb-1">Driver Name</label>
-                <div className="text-sm font-medium text-gray-900">{driverInfo.name}</div>
-              </div>
-              <div>
-                <label className="block text-sm text-gray-500 mb-1">Phone Number</label>
-                <div className="text-sm font-medium text-gray-900">{driverInfo.phone}</div>
-              </div>
-              <div>
-                <label className="block text-sm text-gray-500 mb-1">Email Address</label>
-                <div className="text-sm font-medium text-gray-900">{driverInfo.email}</div>
-              </div>
-              <div>
-                <label className="block text-sm text-gray-500 mb-1">Address</label>
-                <div className="text-sm font-medium text-gray-900">{driverInfo.address || 'N/A'}</div>
-              </div>
-              <div>
-                <label className="block text-sm text-gray-500 mb-1">City</label>
-                <div className="text-sm font-medium text-gray-900">{driverInfo.city || 'N/A'}</div>
-              </div>
-              <div>
-                <label className="block text-sm text-gray-500 mb-1">State</label>
-                <div className="text-sm font-medium text-gray-900">{driverInfo.state || 'N/A'}</div>
-              </div>
-              <div>
-                <label className="block text-sm text-gray-500 mb-1">Pin Code</label>
-                <div className="text-sm font-medium text-gray-900">{driverInfo.pinCode || 'N/A'}</div>
-              </div>
-              <div>
-                <label className="block text-sm text-gray-500 mb-1">License Number</label>
-                <div className="text-sm font-medium text-gray-900">{driverInfo.licenseNumber || 'N/A'}</div>
-              </div>
-              <div>
-                <label className="block text-sm text-gray-500 mb-1">License Expiry Date</label>
-                <div className="text-sm font-medium text-gray-900">{driverInfo.licenseExpiry || 'N/A'}</div>
-              </div>
-              <div>
-                <label className="block text-sm text-gray-500 mb-1">Status</label>
-                <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${driverInfo.status === 'Available' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
-                  }`}>
-                  <span className={`w-2 h-2 rounded-full ${driverInfo.status === 'Available' ? 'bg-emerald-500' : 'bg-red-500'
-                    }`}></span>
-                  {driverInfo.status}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Document Images */}
-          <div className="mb-8">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Document Images</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* Profile Image */}
-              <div>
-                <label className="block text-sm text-gray-500 mb-2">Profile Image</label>
-                <div className="flex items-center gap-4">
-                  {driverInfo.profileImage ? (
-                    <img
-                      src={`${import.meta.env.VITE_API_BASE_URL.replace('/api/v1', '')}${driverInfo.profileImage}`}
-                      alt="Profile"
-                      className="w-16 h-16 rounded-full object-cover"
-                      onError={(e) => {
-                        e.target.style.display = 'none';
-                        e.target.nextSibling.style.display = 'flex';
-                      }}
-                    />
-                  ) : null}
-                  <div className="w-16 h-16 bg-teal-700 rounded-full flex items-center justify-center text-white text-xl font-bold flex-shrink-0" style={{ display: driverInfo.profileImage ? 'none' : 'flex' }}>
-                    {driverInfo.name.split(' ').map(n => n[0]).join('').toUpperCase()}
-                  </div>
+            {/* Personal Information */}
+            <div className="mb-8">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Personal Information</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div>
+                  <label className="block text-sm text-gray-500 mb-1">Driver Name</label>
+                  <div className="text-sm font-medium text-gray-900">{driverInfo.name}</div>
                 </div>
-              </div>
-
-              {/* License Image */}
-              <div>
-                <label className="block text-sm text-gray-500 mb-2">License Image</label>
-                <div className="flex items-center gap-4">
-                  {driverInfo.licenseImage ? (
-                    <img
-                      src={`${import.meta.env.VITE_API_BASE_URL.replace('/api/v1', '')}${driverInfo.licenseImage}`}
-                      alt="License"
-                      className="w-16 h-16 rounded-lg object-cover"
-                      onError={(e) => {
-                        e.target.style.display = 'none';
-                        e.target.nextSibling.style.display = 'flex';
-                      }}
-                    />
-                  ) : null}
-                  <div className="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center border border-gray-300" style={{ display: driverInfo.licenseImage ? 'none' : 'flex' }}>
-                    <span className="text-xs text-gray-500">License</span>
-                  </div>
+                <div>
+                  <label className="block text-sm text-gray-500 mb-1">Phone Number</label>
+                  <div className="text-sm font-medium text-gray-900">{driverInfo.phone}</div>
                 </div>
-              </div>
-
-              {/* ID Proof Image */}
-              <div>
-                <label className="block text-sm text-gray-500 mb-2">ID Proof Image</label>
-                <div className="flex items-center gap-4">
-                  {driverInfo.idProofImage ? (
-                    <img
-                      src={`${import.meta.env.VITE_API_BASE_URL.replace('/api/v1', '')}${driverInfo.idProofImage}`}
-                      alt="ID Proof"
-                      className="w-16 h-16 rounded-lg object-cover"
-                      onError={(e) => {
-                        e.target.style.display = 'none';
-                        e.target.nextSibling.style.display = 'flex';
-                      }}
-                    />
-                  ) : null}
-                  <div className="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center border border-gray-300" style={{ display: driverInfo.idProofImage ? 'none' : 'flex' }}>
-                    <span className="text-xs text-gray-500">ID Proof</span>
-                  </div>
+                <div>
+                  <label className="block text-sm text-gray-500 mb-1">Email Address</label>
+                  <div className="text-sm font-medium text-gray-900">{driverInfo.email}</div>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-500 mb-1">Address</label>
+                  <div className="text-sm font-medium text-gray-900">{driverInfo.address || 'N/A'}</div>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-500 mb-1">City</label>
+                  <div className="text-sm font-medium text-gray-900">{driverInfo.city || 'N/A'}</div>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-500 mb-1">State</label>
+                  <div className="text-sm font-medium text-gray-900">{driverInfo.state || 'N/A'}</div>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-500 mb-1">Pin Code</label>
+                  <div className="text-sm font-medium text-gray-900">{driverInfo.pinCode || 'N/A'}</div>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-500 mb-1">License Number</label>
+                  <div className="text-sm font-medium text-gray-900">{driverInfo.licenseNumber || 'N/A'}</div>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-500 mb-1">License Expiry Date</label>
+                  <div className="text-sm font-medium text-gray-900">{driverInfo.licenseExpiry || 'N/A'}</div>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-500 mb-1">Status</label>
+                  <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${driverInfo.status === 'Available' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
+                    }`}>
+                    <span className={`w-2 h-2 rounded-full ${driverInfo.status === 'Available' ? 'bg-emerald-500' : 'bg-red-500'
+                      }`}></span>
+                    {driverInfo.status}
+                  </span>
                 </div>
               </div>
             </div>
-          </div>
 
-          {/* Vehicle Information */}
-          <div className="mb-8">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Vehicle Information</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div>
-                <label className="block text-sm text-gray-500 mb-1">Vehicle Type</label>
-                <div className="text-sm font-medium text-gray-900">{driverInfo.vehicle.type || 'N/A'}</div>
+            {/* Document Images */}
+            <div className="mb-8">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Document Images</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* Profile Image */}
+                <div>
+                  <label className="block text-sm text-gray-500 mb-2">Profile Image</label>
+                  <div className="flex items-center gap-4">
+                    {driverInfo.profileImage ? (
+                      <img
+                        src={`${import.meta.env.VITE_API_BASE_URL.replace('/api/v1', '')}${driverInfo.profileImage}`}
+                        alt="Profile"
+                        className="w-16 h-16 rounded-full object-cover"
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                          e.target.nextSibling.style.display = 'flex';
+                        }}
+                      />
+                    ) : null}
+                    <div className="w-16 h-16 bg-teal-700 rounded-full flex items-center justify-center text-white text-xl font-bold flex-shrink-0" style={{ display: driverInfo.profileImage ? 'none' : 'flex' }}>
+                      {driverInfo.name.split(' ').map(n => n[0]).join('').toUpperCase()}
+                    </div>
+                  </div>
+                </div>
+
+                {/* License Image */}
+                <div>
+                  <label className="block text-sm text-gray-500 mb-2">License Image</label>
+                  <div className="flex items-center gap-4">
+                    {driverInfo.licenseImage ? (
+                      <img
+                        src={`${import.meta.env.VITE_API_BASE_URL.replace('/api/v1', '')}${driverInfo.licenseImage}`}
+                        alt="License"
+                        className="w-16 h-16 rounded-lg object-cover"
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                          e.target.nextSibling.style.display = 'flex';
+                        }}
+                      />
+                    ) : null}
+                    <div className="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center border border-gray-300" style={{ display: driverInfo.licenseImage ? 'none' : 'flex' }}>
+                      <span className="text-xs text-gray-500">License</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ID Proof Image */}
+                <div>
+                  <label className="block text-sm text-gray-500 mb-2">ID Proof Image</label>
+                  <div className="flex items-center gap-4">
+                    {driverInfo.idProofImage ? (
+                      <img
+                        src={`${import.meta.env.VITE_API_BASE_URL.replace('/api/v1', '')}${driverInfo.idProofImage}`}
+                        alt="ID Proof"
+                        className="w-16 h-16 rounded-lg object-cover"
+                        onError={(e) => {
+                          e.target.style.display = 'none';
+                          e.target.nextSibling.style.display = 'flex';
+                        }}
+                      />
+                    ) : null}
+                    <div className="w-16 h-16 bg-gray-100 rounded-lg flex items-center justify-center border border-gray-300" style={{ display: driverInfo.idProofImage ? 'none' : 'flex' }}>
+                      <span className="text-xs text-gray-500">ID Proof</span>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div>
-                <label className="block text-sm text-gray-500 mb-1">Available Vehicle</label>
-                <div className="text-sm font-medium text-gray-900">{driverInfo.vehicle.name || 'N/A'}</div>
+            </div>
+
+            {/* Vehicle Information */}
+            <div className="mb-8">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Vehicle Information</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div>
+                  <label className="block text-sm text-gray-500 mb-1">Vehicle Type</label>
+                  <div className="text-sm font-medium text-gray-900">{driverInfo.vehicle.type || 'N/A'}</div>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-500 mb-1">Available Vehicle</label>
+                  <div className="text-sm font-medium text-gray-900">{driverInfo.vehicle.name || 'N/A'}</div>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-500 mb-1">Vehicle Number</label>
+                  <div className="text-sm font-medium text-gray-900">{driverInfo.vehicle.number || 'N/A'}</div>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-500 mb-1">Capacity (Tons)</label>
+                  <div className="text-sm font-medium text-gray-900">{driverInfo.vehicle.capacity || 'N/A'}</div>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-500 mb-1">Insurance Number</label>
+                  <div className="text-sm font-medium text-gray-900">{driverInfo.vehicle.insuranceNumber || 'N/A'}</div>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-500 mb-1">Insurance Expiry Date</label>
+                  <div className="text-sm font-medium text-gray-900">{driverInfo.vehicle.insuranceExpiry || 'N/A'}</div>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-500 mb-1">Vehicle Condition</label>
+                  <div className="text-sm font-medium text-gray-900">{driverInfo.vehicle.condition || 'N/A'}</div>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-500 mb-1">Pollution Certificate</label>
+                  <div className="text-sm font-medium text-gray-900">{driverInfo.vehicle.pollutionCert || 'N/A'}</div>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-500 mb-1">Pollution Certificate Expiry</label>
+                  <div className="text-sm font-medium text-gray-900">{driverInfo.vehicle.pollutionCertExpiry || 'N/A'}</div>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-500 mb-1">KA Permit</label>
+                  <div className="text-sm font-medium text-gray-900">{driverInfo.vehicle.kaPermit || 'N/A'}</div>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-500 mb-1">KA Permit Expiry Date</label>
+                  <div className="text-sm font-medium text-gray-900">{driverInfo.vehicle.kaPermitExpiry || 'N/A'}</div>
+                </div>
               </div>
-              <div>
-                <label className="block text-sm text-gray-500 mb-1">Vehicle Number</label>
-                <div className="text-sm font-medium text-gray-900">{driverInfo.vehicle.number || 'N/A'}</div>
-              </div>
-              <div>
-                <label className="block text-sm text-gray-500 mb-1">Capacity (Tons)</label>
-                <div className="text-sm font-medium text-gray-900">{driverInfo.vehicle.capacity || 'N/A'}</div>
-              </div>
-              <div>
-                <label className="block text-sm text-gray-500 mb-1">Insurance Number</label>
-                <div className="text-sm font-medium text-gray-900">{driverInfo.vehicle.insuranceNumber || 'N/A'}</div>
-              </div>
-              <div>
-                <label className="block text-sm text-gray-500 mb-1">Insurance Expiry Date</label>
-                <div className="text-sm font-medium text-gray-900">{driverInfo.vehicle.insuranceExpiry || 'N/A'}</div>
-              </div>
-              <div>
-                <label className="block text-sm text-gray-500 mb-1">Vehicle Condition</label>
-                <div className="text-sm font-medium text-gray-900">{driverInfo.vehicle.condition || 'N/A'}</div>
-              </div>
-              <div>
-                <label className="block text-sm text-gray-500 mb-1">Pollution Certificate</label>
-                <div className="text-sm font-medium text-gray-900">{driverInfo.vehicle.pollutionCert || 'N/A'}</div>
-              </div>
-              <div>
-                <label className="block text-sm text-gray-500 mb-1">Pollution Certificate Expiry</label>
-                <div className="text-sm font-medium text-gray-900">{driverInfo.vehicle.pollutionCertExpiry || 'N/A'}</div>
-              </div>
-              <div>
-                <label className="block text-sm text-gray-500 mb-1">KA Permit</label>
-                <div className="text-sm font-medium text-gray-900">{driverInfo.vehicle.kaPermit || 'N/A'}</div>
-              </div>
-              <div>
-                <label className="block text-sm text-gray-500 mb-1">KA Permit Expiry Date</label>
-                <div className="text-sm font-medium text-gray-900">{driverInfo.vehicle.kaPermitExpiry || 'N/A'}</div>
+            </div>
+
+            {/* Statistics */}
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Statistics</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div>
+                  <label className="block text-sm text-gray-500 mb-1">Today's Hours</label>
+                  <div className="text-sm font-medium text-gray-900">{driverInfo.stats.todayHours}</div>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-500 mb-1">Total Deliveries</label>
+                  <div className="text-sm font-medium text-gray-900">{driverInfo.stats.totalDeliveries}</div>
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-500 mb-1">Delivery Type</label>
+                  <div className="text-sm font-medium text-gray-900">{driverInfo.deliveryType || 'N/A'}</div>
+                </div>
               </div>
             </div>
           </div>
+        )}
 
-          {/* Statistics */}
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Statistics</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div>
-                <label className="block text-sm text-gray-500 mb-1">Today's Hours</label>
-                <div className="text-sm font-medium text-gray-900">{driverInfo.stats.todayHours}</div>
+        {/* Start KM/End KM Tab */}
+        {activeTab === 'km' && (
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 sm:p-8">
+            <h2 className="text-2xl font-bold text-gray-900 mb-6">Start KM / End KM</h2>
+
+            <form onSubmit={(e) => {
+              e.preventDefault();
+              console.log('KM Form Data:', kmFormData);
+              // Add your API call here to save the KM data
+              alert('KM data saved successfully!');
+            }} className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Date Field */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Date <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={kmFormData.date}
+                    onChange={(e) => setKmFormData({ ...kmFormData, date: e.target.value })}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D8568] focus:border-transparent text-sm"
+                  />
+                </div>
+
+                {/* Driver Name Field */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Driver Name <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={kmFormData.driverName}
+                    onChange={(e) => setKmFormData({ ...kmFormData, driverName: e.target.value })}
+                    placeholder="Enter driver name"
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D8568] focus:border-transparent text-sm"
+                  />
+                </div>
+
+                {/* Vehicle Number Field */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Vehicle Number <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={kmFormData.vehicleNumber}
+                    onChange={(e) => setKmFormData({ ...kmFormData, vehicleNumber: e.target.value })}
+                    placeholder="Enter vehicle number"
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D8568] focus:border-transparent text-sm"
+                  />
+                </div>
+
+                {/* Start KM Field */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Start KM <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min="0"
+                    step="0.1"
+                    value={kmFormData.startKm}
+                    onChange={(e) => setKmFormData({ ...kmFormData, startKm: e.target.value })}
+                    placeholder="Enter start kilometer"
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D8568] focus:border-transparent text-sm"
+                  />
+                </div>
+
+                {/* End KM Field */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    End KM <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min="0"
+                    step="0.1"
+                    value={kmFormData.endKm}
+                    onChange={(e) => setKmFormData({ ...kmFormData, endKm: e.target.value })}
+                    placeholder="Enter end kilometer"
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D8568] focus:border-transparent text-sm"
+                  />
+                </div>
               </div>
-              <div>
-                <label className="block text-sm text-gray-500 mb-1">Total Deliveries</label>
-                <div className="text-sm font-medium text-gray-900">{driverInfo.stats.totalDeliveries}</div>
+
+              {/* Total KM Display */}
+              {kmFormData.startKm && kmFormData.endKm && parseFloat(kmFormData.endKm) >= parseFloat(kmFormData.startKm) && (
+                <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-emerald-900">Total Distance Traveled:</span>
+                    <span className="text-lg font-bold text-emerald-700">
+                      {(parseFloat(kmFormData.endKm) - parseFloat(kmFormData.startKm)).toFixed(1)} KM
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* Submit Button */}
+              <div className="flex gap-4 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setKmFormData({
+                    date: new Date().toISOString().split('T')[0],
+                    driverName: driverInfo?.name || '',
+                    vehicleNumber: driverInfo?.vehicle?.number || '',
+                    startKm: '',
+                    endKm: ''
+                  })}
+                  className="px-6 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium transition-colors"
+                >
+                  Reset
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2.5 bg-[#0D7C66] text-white rounded-lg hover:bg-[#0a6354] font-medium transition-colors shadow-md"
+                >
+                  Save KM Data
+                </button>
               </div>
-              <div>
-                <label className="block text-sm text-gray-500 mb-1">Delivery Type</label>
-                <div className="text-sm font-medium text-gray-900">{driverInfo.deliveryType || 'N/A'}</div>
-              </div>
-            </div>
+            </form>
           </div>
-        </div>
+        )}
       </div>
-    </div>
+    </div >
   );
 };
 

@@ -129,8 +129,9 @@ const AddDriver = () => {
       if (formData.branchName) formDataToSend.append('branch_name', formData.branchName);
       if (formData.accountNumber) formDataToSend.append('account_number', formData.accountNumber);
       if (formData.ifscCode) formDataToSend.append('IFSC_code', formData.ifscCode);
-      formDataToSend.append('delivery_type', formData.deliveryType === 'collection' ? 'Local Pickups' : 
-                           formData.deliveryType === 'airport' ? 'Line Airport' : 'Both Types');
+
+      formDataToSend.append('delivery_type', formData.deliveryType === 'collection' ? 'LOCAL GRADE ORDER' : 
+                           formData.deliveryType === 'airport' ? 'BOX ORDER' : 'Both Types');
       formDataToSend.append('status', formData.isActive ? 'Available' : 'Inactive');
       
       if (driverImage) formDataToSend.append('driver_image', driverImage);
@@ -887,6 +888,49 @@ const AddDriver = () => {
             </div>
           </div>
 
+          {/* Driver Wage Section */}
+          <div className="mb-8">
+            <h2 className="text-xl font-bold text-gray-900 mb-6">Driver Wage</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div>
+                <label className="block text-sm text-gray-700 mb-2">Local Grade Order Wage (₹)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  name="localGradeWage"
+                  value={formData.localGradeWage}
+                  onChange={handleInputChange}
+                  placeholder="Enter wage amount"
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-700 mb-2">Box Order Wage (₹)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  name="boxOrderWage"
+                  value={formData.boxOrderWage}
+                  onChange={handleInputChange}
+                  placeholder="Enter wage amount"
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-700 mb-2">Both Types Wage (₹)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  name="bothTypesWage"
+                  value={formData.bothTypesWage}
+                  onChange={handleInputChange}
+                  placeholder="Enter wage amount"
+                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm"
+                />
+              </div>
+            </div>
+          </div>
+
           {/* Delivery Assignment Section */}
           <div className="mb-8">
             <h2 className="text-xl font-bold text-gray-900 mb-2">
@@ -912,7 +956,7 @@ const AddDriver = () => {
                   className="mt-1 w-5 h-5 text-teal-600 focus:ring-2 focus:ring-teal-500"
                 />
                 <div className="ml-3">
-                  <div className="font-semibold text-gray-900">Local Pickups</div>
+                  <div className="font-semibold text-gray-900">LOCAL GRADE ORDER</div>
                   <div className="text-sm text-gray-600 mt-1">
                     Collect vegetables from farmers, suppliers and deliver to packing centers
                   </div>
@@ -934,7 +978,7 @@ const AddDriver = () => {
                   className="mt-1 w-5 h-5 text-teal-600 focus:ring-2 focus:ring-teal-500"
                 />
                 <div className="ml-3">
-                  <div className="font-semibold text-gray-900">Line Airport</div>
+                  <div className="font-semibold text-gray-900">BOX ORDER</div>
                   <div className="text-sm text-gray-600 mt-1">
                     Pick up from packing centers and deliver to airports for shipment
                   </div>
@@ -958,7 +1002,7 @@ const AddDriver = () => {
                 <div className="ml-3">
                   <div className="font-semibold text-gray-900">Both Types</div>
                   <div className="text-sm text-gray-600 mt-1">
-                    Handle both local pickups and line airport deliveries as needed
+                    Handle both LOCAL GRADE ORDER and line airport deliveries as needed
                   </div>
                 </div>
               </label>

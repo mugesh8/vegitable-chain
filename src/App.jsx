@@ -76,6 +76,13 @@ import ReportLabour from './components/admin/pages/ReportLabour'
 import ReportInvoice from './components/admin/pages/ReportInvoice'
 import ReportPayout from './components/admin/pages/ReportPayout'
 import ReportOrder from './components/admin/pages/ReportOrder'
+import ReportOrderView from './components/admin/pages/ReportOrderView'
+import ReportFarmerView from './components/admin/pages/ReportFarmerView'
+import ReportFarmerOrderView from './components/admin/pages/ReportFarmerOrderView'
+import ReportSupplierView from './components/admin/pages/ReportSupplierView'
+import ReportSupplierOrderView from './components/admin/pages/ReportSupplierOrderView'
+import ReportThirdPartyView from './components/admin/pages/ReportThirdPartyView'
+import ReportThirdPartyOrderView from './components/admin/pages/ReportThirdPartyOrderView'
 import AddProduct from './components/admin/pages/AddProduct'
 import OrderManagementList from './components/admin/pages/OrderManagement'
 import OrderCreate from './components/admin/pages/OrderCreate'
@@ -193,6 +200,13 @@ const App = () => {
         <Route path="/reports/invoice" element={<ProtectedRoute><Layout><ReportInvoice /></Layout></ProtectedRoute>} />
         <Route path="/reports/payout" element={<ProtectedRoute><Layout><ReportPayout /></Layout></ProtectedRoute>} />
         <Route path="/reports/order" element={<ProtectedRoute><Layout><ReportOrder /></Layout></ProtectedRoute>} />
+        <Route path="/admin/report-order/:orderId" element={<ProtectedRoute><Layout><ReportOrderView /></Layout></ProtectedRoute>} />
+        <Route path="/admin/report-farmer/:farmerId" element={<ProtectedRoute><Layout><ReportFarmerView /></Layout></ProtectedRoute>} />
+        <Route path="/admin/report-farmer/:farmerId/order/:orderId" element={<ProtectedRoute><Layout><ReportFarmerOrderView /></Layout></ProtectedRoute>} />
+        <Route path="/admin/report-supplier/:supplierId" element={<ProtectedRoute><Layout><ReportSupplierView /></Layout></ProtectedRoute>} />
+        <Route path="/admin/report-supplier/:supplierId/order/:orderId" element={<ProtectedRoute><Layout><ReportSupplierOrderView /></Layout></ProtectedRoute>} />
+        <Route path="/admin/report-third-party/:thirdPartyId" element={<ProtectedRoute><Layout><ReportThirdPartyView /></Layout></ProtectedRoute>} />
+        <Route path="/admin/report-third-party/:thirdPartyId/order/:orderId" element={<ProtectedRoute><Layout><ReportThirdPartyOrderView /></Layout></ProtectedRoute>} />
         <Route path="/roles" element={<ProtectedRoute><Layout><RolesPermissionSystem /></Layout></ProtectedRoute>} />
         <Route path="/notifications" element={<ProtectedRoute><Layout><Notifications /></Layout></ProtectedRoute>} />
         <Route path="/settings" element={<ProtectedRoute><Layout><PackingInventory /></Layout></ProtectedRoute>} />

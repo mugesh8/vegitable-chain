@@ -114,7 +114,7 @@ const EditDriver = () => {
           branch_name: driver.branch_name || '',
           account_number: driver.account_number || '',
           IFSC_code: driver.IFSC_code || driver.ifsc_code || '',
-          delivery_type: driver.delivery_type || driver.deliveryType || 'Local Pickups',
+          delivery_type: driver.delivery_type || driver.deliveryType || 'LOCAL GRADE ORDER',
           status: driver.status || 'Available',
           driver_image: driver.driver_image || '',
           license_image: driver.license_image || '',
@@ -1008,20 +1008,20 @@ const EditDriver = () => {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {/* Collection Delivery */}
                 <label className={`relative flex items-start p-4 border-2 rounded-xl cursor-pointer transition-all ${
-                  formData.delivery_type === 'Local Pickups' 
+                  formData.delivery_type === 'LOCAL GRADE ORDER' 
                     ? 'border-teal-600 bg-teal-50' 
                     : 'border-gray-300 hover:border-gray-400'
                 }`}>
                   <input
                     type="radio"
                     name="delivery_type"
-                    value="Local Pickups"
-                    checked={formData.delivery_type === 'Local Pickups'}
+                    value="LOCAL GRADE ORDER"
+                    checked={formData.delivery_type === 'LOCAL GRADE ORDER'}
                     onChange={handleInputChange}
                     className="mt-1 w-5 h-5 text-teal-600 focus:ring-2 focus:ring-teal-500"
                   />
                   <div className="ml-3">
-                    <div className="font-semibold text-gray-900">Local Pickups</div>
+                    <div className="font-semibold text-gray-900">LOCAL GRADE ORDER</div>
                     <div className="text-sm text-gray-600 mt-1">
                       Collect vegetables from farmers, suppliers and deliver to packing centers
                     </div>
@@ -1030,20 +1030,20 @@ const EditDriver = () => {
 
                 {/* Airport Delivery */}
                 <label className={`relative flex items-start p-4 border-2 rounded-xl cursor-pointer transition-all ${
-                  formData.delivery_type === 'Line Airport' 
+                  formData.delivery_type === 'BOX ORDER' 
                     ? 'border-teal-600 bg-teal-50' 
                     : 'border-gray-300 hover:border-gray-400'
                 }`}>
                   <input
                     type="radio"
                     name="delivery_type"
-                    value="Line Airport"
-                    checked={formData.delivery_type === 'Line Airport'}
+                    value="BOX ORDER"
+                    checked={formData.delivery_type === 'BOX ORDER'}
                     onChange={handleInputChange}
                     className="mt-1 w-5 h-5 text-teal-600 focus:ring-2 focus:ring-teal-500"
                   />
                   <div className="ml-3">
-                    <div className="font-semibold text-gray-900">Line Airport</div>
+                    <div className="font-semibold text-gray-900">BOX ORDER</div>
                     <div className="text-sm text-gray-600 mt-1">
                       Pick up from packing centers and deliver to airports for shipment
                     </div>

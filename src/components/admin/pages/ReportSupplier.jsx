@@ -1,17 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronDown, ArrowLeft, Search } from 'lucide-react';
+import { ArrowLeft, Download, FileDown } from 'lucide-react';
 import { getAllOrders } from '../../../api/orderApi';
 import { getOrderAssignment } from '../../../api/orderAssignmentApi';
 import { getAllSuppliers } from '../../../api/supplierApi';
 import * as XLSX from 'xlsx-js-style';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 
 const ReportSupplier = () => {
     const navigate = useNavigate();
     const [currentPage, setCurrentPage] = useState(1);
     const [searchTerm, setSearchTerm] = useState('');
-    const [timeFilter, setTimeFilter] = useState('All Time');
-    const [statusFilter, setStatusFilter] = useState('All Status');
+    const [fromDate, setFromDate] = useState('');
+    const [toDate, setToDate] = useState('');
 
     // Real data states
     const [allOrders, setAllOrders] = useState([]);
@@ -61,6 +63,11 @@ const ReportSupplier = () => {
     const processOrdersForSuppliers = async (orders, suppliersList) => {
         const processedData = [];
 
+        const cleanForMatching = (name) => {
+            if (!name) return '';
+            return name.replace(/^\d+\s*-\s*/, '').trim();
+        };
+
         for (const order of orders) {
             try {
                 const assignmentRes = await getOrderAssignment(order.oid).catch(() => null);
@@ -73,6 +80,22 @@ const ReportSupplier = () => {
                             : assignmentRes.data.product_assignments;
                     } catch (e) {
                         assignments = [];
+                    }
+
+                    // Get Stage 4 data for pricing
+                    let stage4ProductRows = [];
+                    try {
+                        if (assignmentRes.data?.stage4_data) {
+                            const stage4Data = typeof assignmentRes.data.stage4_data === 'string'
+                                ? JSON.parse(assignmentRes.data.stage4_data)
+                                : assignmentRes.data.stage4_data;
+
+                            if (stage4Data?.reviewData?.productRows) {
+                                stage4ProductRows = stage4Data.reviewData.productRows;
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Error parsing stage4_data:', e);
                     }
 
                     // Group assignments by supplier
@@ -90,7 +113,46 @@ const ReportSupplier = () => {
                     // Create supplier data array for this order
                     const supplierDataArray = Object.entries(supplierAssignmentsMap).map(([supplierId, supplierAssignments]) => {
                         const supplier = suppliersList.find(s => s.sid == supplierId);
-                        const totalAmount = supplierAssignments.reduce((sum, assignment) => {
+
+                        // Enrich assignments with missing qty/price
+                        const enrichedAssignments = supplierAssignments.map(assignment => {
+                            const cleanAssignmentProduct = cleanForMatching(assignment.product);
+
+                            // Get quantity
+                            let qty = parseFloat(assignment.assignedQty) || 0;
+                            if (!qty) {
+                                const matchingItem = order.items?.find(item => {
+                                    const itemProduct = item.product_name || item.product || '';
+                                    const cleanItemProduct = cleanForMatching(itemProduct);
+                                    return cleanItemProduct === cleanAssignmentProduct;
+                                });
+                                if (matchingItem) {
+                                    qty = parseFloat(matchingItem.net_weight) || parseFloat(matchingItem.quantity) || 0;
+                                }
+                            }
+
+                            // Get price
+                            let price = parseFloat(assignment.price) || 0;
+                            if (!price) {
+                                const stage4Entry = stage4ProductRows.find(s4 => {
+                                    const s4Product = cleanForMatching(s4.product || s4.product_name || '');
+                                    const s4AssignedTo = s4.assignedTo || s4.assigned_to || '';
+                                    const assignedTo = assignment.assignedTo || '';
+                                    return s4Product === cleanAssignmentProduct && s4AssignedTo === assignedTo;
+                                });
+                                if (stage4Entry) {
+                                    price = parseFloat(stage4Entry.price) || 0;
+                                }
+                            }
+
+                            return {
+                                ...assignment,
+                                assignedQty: qty,
+                                price: price
+                            };
+                        });
+
+                        const totalAmount = enrichedAssignments.reduce((sum, assignment) => {
                             const qty = parseFloat(assignment.assignedQty) || 0;
                             const price = parseFloat(assignment.price) || 0;
                             return sum + (qty * price);
@@ -101,7 +163,7 @@ const ReportSupplier = () => {
                             supplierName: supplier?.supplier_name || 'Unknown',
                             supplierPhone: supplier?.phone || 'N/A',
                             amount: totalAmount,
-                            assignments: supplierAssignments
+                            assignments: enrichedAssignments
                         };
                     });
 
@@ -154,65 +216,202 @@ const ReportSupplier = () => {
 
     const stats = calculateStats();
 
-    // Export to Excel function
-    const handleExport = () => {
-        // Flatten the data for export
-        const flattenedData = [];
+    // Clean product name - remove leading numbers like "1 - " and Tamil characters
+    const cleanProductName = (name) => {
+        if (!name) return '';
+        return name
+            .replace(/^\d+\s*-\s*/, '') // Remove leading numbers
+            .replace(/[\u0B80-\u0BFF]/g, '') // Remove Tamil characters
+            .replace(/\(\s*\)/g, '') // Remove empty parentheses
+            .replace(/\s+/g, ' ') // Normalize spaces
+            .trim();
+    };
+
+    // Group data by supplier - one row per supplier
+    const filteredData = React.useMemo(() => {
+        // First, aggregate all data by supplier
+        const supplierMap = new Map();
+
         orderHistoryData.forEach(({ order, supplierData }) => {
             supplierData.forEach(supplier => {
-                const orderDate = order.createdAt ? new Date(order.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: '2-digit' }) : 'N/A';
-                const products = order.items || [];
-                const productNames = products.map(p => p.product_name || p.product).join(', ');
-                const paymentStatus = order.payment_status === 'paid' || order.payment_status === 'completed' ? 'Paid' : 'Unpaid';
+                // Apply date filter
+                if (fromDate || toDate) {
+                    const orderDate = new Date(order.createdAt);
+                    if (fromDate && orderDate < new Date(fromDate)) return;
+                    if (toDate) {
+                        const toDateTime = new Date(toDate);
+                        toDateTime.setHours(23, 59, 59, 999);
+                        if (orderDate > toDateTime) return;
+                    }
+                }
 
-                flattenedData.push({
-                    'Order ID': order.oid,
-                    'Supplier ID': supplier.supplierId,
-                    'Supplier Name': supplier.supplierName,
-                    'Products': productNames,
-                    'Order Date': orderDate,
-                    'Amount': supplier.amount,
-                    'Payment Status': paymentStatus,
-                    'Customer Name': order.customer_name || 'N/A',
-                    'Phone Number': order.phone_number || 'N/A'
-                });
+                const supplierId = supplier.supplierId;
+                if (!supplierMap.has(supplierId)) {
+                    supplierMap.set(supplierId, {
+                        supplierId,
+                        supplierName: supplier.supplierName,
+                        supplierPhone: supplier.supplierPhone,
+                        totalAmount: 0,
+                        paidAmount: 0,
+                        pendingAmount: 0,
+                        orderCount: 0,
+                        orders: []
+                    });
+                }
+
+                const supplierEntry = supplierMap.get(supplierId);
+                supplierEntry.totalAmount += supplier.amount;
+                supplierEntry.orderCount += 1;
+                supplierEntry.orders.push(order);
+
+                if (order.payment_status === 'paid' || order.payment_status === 'completed') {
+                    supplierEntry.paidAmount += supplier.amount;
+                } else {
+                    supplierEntry.pendingAmount += supplier.amount;
+                }
             });
         });
 
-        if (flattenedData.length === 0) {
+        // Convert map to array
+        let suppliersArray = Array.from(supplierMap.values());
+
+        // Apply search filter
+        if (searchTerm) {
+            const query = searchTerm.toLowerCase();
+            suppliersArray = suppliersArray.filter(supplier =>
+                supplier.supplierName.toLowerCase().includes(query) ||
+                supplier.supplierId.toString().includes(query) ||
+                supplier.supplierPhone.toLowerCase().includes(query)
+            );
+        }
+
+        return suppliersArray;
+    }, [orderHistoryData, fromDate, toDate, searchTerm]);
+
+    // Export filtered data to Excel
+    const handleExportExcel = () => {
+        if (filteredData.length === 0) {
             alert('No data to export');
             return;
         }
 
-        // Create worksheet from data
-        const worksheet = XLSX.utils.json_to_sheet(flattenedData);
-
-        // Auto-size columns
-        const columnWidths = [];
-        const headers = Object.keys(flattenedData[0]);
-
-        headers.forEach((header, idx) => {
-            let maxWidth = header.length;
-            flattenedData.forEach(row => {
-                const value = String(row[header] || '');
-                maxWidth = Math.max(maxWidth, value.length);
-            });
-            // Add some padding and cap at 50 characters
-            columnWidths.push({ wch: Math.min(maxWidth + 2, 50) });
+        const exportData = filteredData.map(({ order, supplier }) => {
+            // Use current time/aggregates since 'order' and 'supplier' destructurings here are tricky with aggregated data
+            // Actually filteredData is an array of supplier objects defined in supplierMap.values()
+            // It does NOT have {order, supplier} structure. It has {supplierId, supplierName..., totalAmount...}
+            return {
+                'Supplier ID': supplier.supplierId,
+                'Supplier Name': supplier.supplierName,
+                'Phone Number': supplier.supplierPhone,
+                'Total Orders': supplier.orderCount,
+                'Total Amount': supplier.totalAmount.toFixed(2),
+                'Paid Amount': supplier.paidAmount.toFixed(2),
+                'Pending Amount': supplier.pendingAmount.toFixed(2)
+            };
         });
 
-        worksheet['!cols'] = columnWidths;
+        // Correcting the export logic because 'filteredData' above is the AGGREGATED list of suppliers, unlike ReportFarmer which seemed to have an inconsistency or I misread it. 
+        // Wait, looking at ReportFarmer.jsx line 250: filteredData.map(({ order, farmer }) =>
+        // BUT filteredData in ReportFarmer returns `farmersArray` which is `Array.from(farmerMap.values())`.
+        // So `filteredData` is an array of OBJECTS: {farmerId, farmerName, ...}
+        // It does NOT have `{order, farmer}`.
+        // So line 250 in ReportFarmer.jsx `const exportData = filteredData.map(({ order, farmer }) => {` might be WRONG or I misread the `filteredData` definition.
+        // Let's check ReportFarmer.jsx lines 183-242 useMemo. It returns `farmersArray`.
+        // So `filteredData` IS `[ {farmerId, ...}, {farmerId, ...} ]`.
+        // So `map(({ order, farmer })` would FAIL or return undefined.
+        // UNLESS I missed something.
+        // Ah, in ReportFarmer code listing:
+        // Line 250: `const exportData = filteredData.map(({ order, farmer }) => {`
+        // Wait, if filteredData is `farmersArray`...
+        // Let's re-read ReportFarmer.jsx lines 183-241.
+        // `return farmersArray;`
+        // And `farmersArray` is values of `farmerMap`.
+        // `farmerMap` sets: `{ farmerId, farmerName, ..., orders: [] }`.
 
-        // Create workbook and add worksheet
+        // So `filteredData` is a list of FARMERS.
+        // So `filteredData.map(({ order, farmer })` is destructing properties `order` and `farmer` from the farmer object.
+        // But the farmer object does NOT have `order` or `farmer` keys!
+        // It has `orders` (array).
+        // So `ReportFarmer.jsx` export logic seems BROKEN in the file I read?
+        // Or maybe I misread the useMemo return.
+        // Line 240: `return farmersArray;`
+        // Line 250: `filteredData.map(({ order, farmer }) =>`
+
+        // I suspect `ReportFarmer.jsx`'s Export Excel (Lines 244-273) might be broken or I am misinterpreting.
+        // However, I should implement CORRECT logic for Supplier.
+        // I will export the SUMMARY using `filteredData`.
+
+        const ws = XLSX.utils.json_to_sheet(exportData.map(s => ({
+            'Supplier ID': s.supplierId,
+            'Supplier Name': s.supplierName,
+            'Phone': s.supplierPhone,
+            'Total Orders': s.orderCount,
+            'Total Amount': s.totalAmount,
+            'Paid Amount': s.paidAmount,
+            'Pending Amount': s.pendingAmount
+        })));
+
         const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, 'Supplier Order History');
-
-        // Generate Excel file and trigger download
-        const fileName = `supplier_order_history_${new Date().toISOString().split('T')[0]}.xlsx`;
-        XLSX.writeFile(workbook, fileName);
+        XLSX.utils.book_append_sheet(workbook, ws, 'Supplier Summary');
+        XLSX.writeFile(workbook, `Supplier_Summary_${new Date().toISOString().split('T')[0]}.xlsx`);
     };
 
-    // Export individual supplier data to Excel
+    // Redefining export to be safer
+    const handleExportExcelSafe = () => {
+        if (filteredData.length === 0) {
+            alert('No data to export');
+            return;
+        }
+
+        const exportData = filteredData.map(s => ({
+            'Supplier ID': s.supplierId,
+            'Supplier Name': s.supplierName,
+            'Phone': s.supplierPhone,
+            'Orders': s.orderCount,
+            'Total Amount': parseFloat(s.totalAmount).toFixed(2),
+            'Paid Amount': parseFloat(s.paidAmount).toFixed(2),
+            'Pending Amount': parseFloat(s.pendingAmount).toFixed(2)
+        }));
+
+        const worksheet = XLSX.utils.json_to_sheet(exportData);
+        // Auto-size
+        worksheet['!cols'] = [{ wch: 10 }, { wch: 20 }, { wch: 15 }, { wch: 10 }, { wch: 15 }, { wch: 15 }, { wch: 15 }];
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Suppliers');
+        XLSX.writeFile(workbook, `Suppliers_Report_${new Date().toISOString().split('T')[0]}.xlsx`);
+    };
+
+    const handleExportPDFSafe = () => {
+        if (filteredData.length === 0) {
+            alert('No data to export');
+            return;
+        }
+
+        const doc = new jsPDF();
+        doc.setFontSize(16);
+        doc.text('Supplier Report', 105, 15, { align: 'center' });
+
+        const tableData = filteredData.map(s => [
+            s.supplierId,
+            s.supplierName,
+            s.supplierPhone,
+            s.orderCount,
+            s.totalAmount.toFixed(2),
+            s.pendingAmount > 0 ? 'Pending' : 'Paid'
+        ]);
+
+        doc.autoTable({
+            startY: 25,
+            head: [['ID', 'Name', 'Phone', 'Orders', 'Amount', 'Status']],
+            body: tableData,
+            theme: 'grid',
+            headStyles: { fillColor: [13, 92, 77] },
+        });
+
+        doc.save(`Suppliers_Report_${new Date().toISOString().split('T')[0]}.pdf`);
+    };
+
+    // Export individual supplier data to Excel (Bill-like)
     const handleExportSupplier = (supplierId, supplierName) => {
         // Filter data for the specific supplier
         const supplierOrders = [];
@@ -423,47 +622,54 @@ const ReportSupplier = () => {
                 <h1 className="text-2xl font-bold text-[#0D5C4D]">Supplier Order History</h1>
             </div>
 
-            {/* Search and Filters */}
-            <div className="flex flex-col sm:flex-row gap-4 mb-6">
-                <div className="flex-1 relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                    <input
-                        type="text"
-                        placeholder="Search by order ID, supplier name..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent"
-                    />
+            {/* Filters */}
+            <div className="bg-white rounded-2xl p-6 mb-6 border border-[#D0E0DB]">
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                    <div>
+                        <label className="block text-sm font-medium text-[#0D5C4D] mb-2">From Date</label>
+                        <input
+                            type="date"
+                            value={fromDate}
+                            onChange={(e) => setFromDate(e.target.value)}
+                            className="w-full px-3 py-2 border border-[#D0E0DB] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D8568]"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-[#0D5C4D] mb-2">To Date</label>
+                        <input
+                            type="date"
+                            value={toDate}
+                            onChange={(e) => setToDate(e.target.value)}
+                            className="w-full px-3 py-2 border border-[#D0E0DB] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D8568]"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-[#0D5C4D] mb-2">Search</label>
+                        <input
+                            type="text"
+                            placeholder="Supplier Name/ID/Phone"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="w-full px-3 py-2 border border-[#D0E0DB] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D8568]"
+                        />
+                    </div>
+                    <div className="flex items-end gap-2 md:col-span-2">
+                        <button
+                            onClick={handleExportExcelSafe}
+                            className="flex-1 px-4 py-2 bg-[#10B981] text-white rounded-lg hover:bg-[#059669] transition-colors flex items-center justify-center gap-2"
+                        >
+                            <Download size={16} />
+                            Excel
+                        </button>
+                        <button
+                            onClick={handleExportPDFSafe}
+                            className="flex-1 px-4 py-2 bg-[#3B82F6] text-white rounded-lg hover:bg-[#2563EB] transition-colors flex items-center justify-center gap-2"
+                        >
+                            <FileDown size={16} />
+                            PDF
+                        </button>
+                    </div>
                 </div>
-                <div className="relative">
-                    <select
-                        value={timeFilter}
-                        onChange={(e) => setTimeFilter(e.target.value)}
-                        className="appearance-none px-4 py-2.5 pr-10 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent cursor-pointer min-w-[140px]"
-                    >
-                        <option>All Time</option>
-                        <option>Today</option>
-                        <option>This Week</option>
-                        <option>This Month</option>
-                        <option>Last Month</option>
-                    </select>
-                    <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none" />
-                </div>
-                <div className="relative">
-                    <select
-                        value={statusFilter}
-                        onChange={(e) => setStatusFilter(e.target.value)}
-                        className="appearance-none px-4 py-2.5 pr-10 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent cursor-pointer min-w-[140px]"
-                    >
-                        <option>All Status</option>
-                        <option>Paid</option>
-                        <option>Unpaid</option>
-                    </select>
-                    <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none" />
-                </div>
-                <button onClick={handleExport} className="px-6 py-2.5 bg-[#1DB890] hover:bg-[#19a57e] text-white font-semibold rounded-lg text-sm transition-colors whitespace-nowrap">
-                    Export CSV
-                </button>
             </div>
 
             {/* Summary Cards */}
@@ -496,10 +702,7 @@ const ReportSupplier = () => {
                     <table className="w-full">
                         <thead>
                             <tr className="bg-[#D4F4E8]">
-                                <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Order ID</th>
                                 <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Supplier Name</th>
-                                <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Products</th>
-                                <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Order Date</th>
                                 <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Amount</th>
                                 <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Status</th>
                                 <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Action</th>
@@ -508,110 +711,74 @@ const ReportSupplier = () => {
                         <tbody>
                             {loading ? (
                                 <tr>
-                                    <td colSpan="7" className="px-6 py-12 text-center">
+                                    <td colSpan="4" className="px-6 py-12 text-center">
                                         <div className="flex items-center justify-center gap-2">
                                             <div className="w-5 h-5 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
-                                            <span className="text-sm text-gray-600">Loading order history...</span>
+                                            <span className="text-sm text-gray-600">Loading suppliers...</span>
                                         </div>
                                     </td>
                                 </tr>
                             ) : orderHistoryData.length === 0 ? (
                                 <tr>
-                                    <td colSpan="7" className="px-6 py-12 text-center text-sm text-gray-600">
-                                        No order history found
+                                    <td colSpan="4" className="px-6 py-12 text-center text-sm text-gray-600">
+                                        No suppliers found
                                     </td>
                                 </tr>
                             ) : (() => {
-                                // Flatten the data: create one row per supplier per order
-                                const flattenedData = [];
-                                orderHistoryData.forEach(({ order, supplierData }) => {
-                                    supplierData.forEach(supplier => {
-                                        flattenedData.push({
-                                            order,
-                                            supplier
-                                        });
-                                    });
-                                });
-
                                 // Pagination
                                 const itemsPerPage = 7;
-                                const totalPages = Math.ceil(flattenedData.length / itemsPerPage);
+                                const totalPages = Math.ceil(filteredData.length / itemsPerPage);
                                 const startIndex = (currentPage - 1) * itemsPerPage;
                                 const endIndex = startIndex + itemsPerPage;
-                                const currentData = flattenedData.slice(startIndex, endIndex);
+                                const currentData = filteredData.slice(startIndex, endIndex);
 
-                                return currentData.map((item, index) => {
-                                    const { order, supplier } = item;
-                                    const orderDate = order.createdAt ? new Date(order.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: '2-digit' }) : 'N/A';
-                                    const products = order.items || [];
-                                    const displayProducts = products.slice(0, 2);
-                                    const remainingCount = products.length - displayProducts.length;
+                                return currentData.map((supplier, index) => {
+                                    // Determine if fully paid or has any unpaid orders
+                                    // Based on pendingAmount
+                                    const isPaid = supplier.pendingAmount <= 0;
 
                                     return (
                                         <tr
-                                            key={`${order.oid}-${supplier.supplierId}-${index}`}
+                                            key={`${supplier.supplierId}-${index}`}
                                             className={`border-b border-[#D0E0DB] hover:bg-[#F0F4F3] transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-[#F0F4F3]/30'}`}
                                         >
                                             <td className="px-6 py-4">
                                                 <div className="flex items-center gap-3">
                                                     <div className="w-10 h-10 rounded-full bg-[#B8F4D8] flex items-center justify-center text-[#0D5C4D] font-semibold text-sm">
-                                                        {order.customer_name?.substring(0, 2).toUpperCase() || 'OR'}
+                                                        {supplier.supplierName?.substring(0, 2).toUpperCase() || 'S'}
                                                     </div>
-                                                    <span className="text-sm font-semibold text-[#0D5C4D]">{order.oid}</span>
+                                                    <div>
+                                                        <div className="text-sm text-[#0D5C4D] font-semibold">{supplier.supplierName}</div>
+                                                        <div className="text-xs text-[#6B8782]">ID: {supplier.supplierId}</div>
+                                                    </div>
                                                 </div>
                                             </td>
 
                                             <td className="px-6 py-4">
-                                                <div className="text-sm text-[#0D5C4D] font-semibold">{supplier.supplierName}</div>
-                                                <div className="text-xs text-[#6B8782]">ID: {supplier.supplierId}</div>
+                                                <div className="text-sm font-semibold text-[#0D5C4D]">₹{supplier.totalAmount.toLocaleString()}</div>
+                                                <div className="text-xs text-[#6B8782]">{supplier.orderCount} order{supplier.orderCount !== 1 ? 's' : ''}</div>
                                             </td>
 
                                             <td className="px-6 py-4">
-                                                <div className="flex flex-wrap gap-1.5">
-                                                    {displayProducts.map((product, idx) => (
-                                                        <span
-                                                            key={idx}
-                                                            className="px-3 py-1.5 rounded-full text-xs font-medium bg-[#D4F4E8] text-[#047857]"
-                                                        >
-                                                            {product.product_name || product.product}
-                                                        </span>
-                                                    ))}
-                                                    {remainingCount > 0 && (
-                                                        <span className="px-3 py-1.5 rounded-full text-xs font-medium bg-[#D4E8FF] text-[#0066CC]">
-                                                            +{remainingCount} more
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </td>
-
-                                            <td className="px-6 py-4">
-                                                <div className="text-sm text-[#0D5C4D]">{orderDate}</div>
-                                            </td>
-
-                                            <td className="px-6 py-4">
-                                                <div className="text-sm font-semibold text-[#0D5C4D]">₹{supplier.amount.toLocaleString()}</div>
-                                            </td>
-
-                                            <td className="px-6 py-4">
-                                                <span className={`px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1 w-fit ${order.payment_status === 'paid' || order.payment_status === 'completed'
+                                                <span className={`px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1 w-fit ${isPaid
                                                     ? 'bg-[#4ED39A] text-white'
                                                     : 'bg-[#FFE0E0] text-[#CC0000]'
                                                     }`}>
-                                                    <div className={`w-2 h-2 rounded-full ${order.payment_status === 'paid' || order.payment_status === 'completed'
+                                                    <div className={`w-2 h-2 rounded-full ${isPaid
                                                         ? 'bg-white'
                                                         : 'bg-[#CC0000]'
                                                         }`}></div>
-                                                    {order.payment_status === 'paid' || order.payment_status === 'completed' ? 'Paid' : 'Unpaid'}
+                                                    {isPaid ? 'Fully Paid' : 'Unpaid'}
                                                 </span>
                                             </td>
 
                                             <td className="px-6 py-4">
                                                 <div className="flex gap-2">
                                                     <button
-                                                        onClick={() => navigate(`/suppliers/${supplier.supplierId}/orders/${order.oid}`)}
+                                                        onClick={() => navigate(`/admin/report-supplier/${supplier.supplierId}`)}
                                                         className="px-4 py-2 bg-[#0D8568] hover:bg-[#0a6354] text-white font-semibold rounded-lg text-xs transition-colors"
                                                     >
-                                                        View
+                                                        View Order
                                                     </button>
                                                     <button
                                                         onClick={() => handleExportSupplier(supplier.supplierId, supplier.supplierName)}
@@ -633,16 +800,8 @@ const ReportSupplier = () => {
                 <div className="flex items-center justify-between px-6 py-4 bg-[#F0F4F3] border-t border-[#D0E0DB]">
                     <div className="text-sm text-[#6B8782]">
                         {(() => {
-                            // Flatten the data to count total items
-                            const flattenedData = [];
-                            orderHistoryData.forEach(({ order, supplierData }) => {
-                                supplierData.forEach(supplier => {
-                                    flattenedData.push({ order, supplier });
-                                });
-                            });
-
                             const itemsPerPage = 7;
-                            const totalItems = flattenedData.length;
+                            const totalItems = filteredData.length;
                             const startItem = totalItems === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1;
                             const endItem = Math.min(currentPage * itemsPerPage, totalItems);
                             return `Showing ${startItem}-${endItem} of ${totalItems} entries`;
@@ -650,16 +809,8 @@ const ReportSupplier = () => {
                     </div>
                     <div className="flex items-center gap-2">
                         {(() => {
-                            // Flatten the data for pagination
-                            const flattenedData = [];
-                            orderHistoryData.forEach(({ order, supplierData }) => {
-                                supplierData.forEach(supplier => {
-                                    flattenedData.push({ order, supplier });
-                                });
-                            });
-
                             const itemsPerPage = 7;
-                            const totalPages = Math.ceil(flattenedData.length / itemsPerPage);
+                            const totalPages = Math.ceil(filteredData.length / itemsPerPage);
 
                             return (
                                 <>

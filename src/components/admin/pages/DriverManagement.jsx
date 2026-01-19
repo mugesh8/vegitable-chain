@@ -21,12 +21,13 @@ const DriverManagement = () => {
   const [activeTab, setActiveTab] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
-  const [vehicleFilter, setVehicleFilter] = useState('All');
   const [openDropdown, setOpenDropdown] = useState(null);
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
   const dropdownRef = useRef(null);
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, driverId: null, driverName: '' });
   const [drivers, setDrivers] = useState([]);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 7;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -81,7 +82,11 @@ const DriverManagement = () => {
             capacity: driver.capacity
           },
           deliveryType: driver.delivery_type || driver.deliveryType,
-          status: driver.status,
+          status: (() => {
+            const s = (driver.status || '').toLowerCase();
+            if (['inactive', 'absent'].includes(s)) return 'Absent';
+            return 'Present';
+          })(),
           workingHours: driver.working_hours ? `${driver.working_hours} hrs` : '0 hrs'
         };
       });
@@ -100,7 +105,7 @@ const DriverManagement = () => {
           initial: 'RP',
           color: 'bg-teal-700',
           vehicle: { name: 'Tata Ace', number: 'TN 01 AB 1234', capacity: '1 Ton' },
-          deliveryType: 'Local Pickup',
+          deliveryType: 'LOCAL GRADE ORDER',
           status: 'Available',
           workingHours: '8.5 hrs'
         },
@@ -111,7 +116,7 @@ const DriverManagement = () => {
           initial: 'SK',
           color: 'bg-teal-700',
           vehicle: { name: 'Mahindra Bolero', number: 'TN 02 CD 9876', capacity: '1.5 Ton' },
-          deliveryType: 'Line Airport',
+          deliveryType: 'BOX ORDER',
           status: 'On Trip',
           workingHours: '6.0 hrs'
         }
@@ -158,13 +163,9 @@ const DriverManagement = () => {
 
   const getStatusColor = (status) => {
     switch (status) {
-      case 'Available':
+      case 'Present':
         return 'bg-emerald-100 text-emerald-700';
-      case 'On Trip':
-        return 'bg-blue-100 text-blue-700';
-      case 'Break':
-        return 'bg-amber-100 text-amber-700';
-      case 'Inactive':
+      case 'Absent':
         return 'bg-red-100 text-red-700';
       default:
         return 'bg-gray-100 text-gray-700';
@@ -173,13 +174,9 @@ const DriverManagement = () => {
 
   const getStatusDot = (status) => {
     switch (status) {
-      case 'Available':
+      case 'Present':
         return 'bg-emerald-500';
-      case 'On Trip':
-        return 'bg-blue-500';
-      case 'Break':
-        return 'bg-amber-500';
-      case 'Inactive':
+      case 'Absent':
         return 'bg-red-500';
       default:
         return 'bg-gray-500';
@@ -188,14 +185,32 @@ const DriverManagement = () => {
 
   const getDeliveryTypeColor = (type) => {
     switch (type) {
-      case 'Local Pickup':
+      case 'LOCAL GRADE ORDER':
         return 'bg-blue-100 text-blue-700';
-      case 'Line Airport':
+      case 'BOX ORDER':
         return 'bg-orange-100 text-orange-700';
       default:
         return 'bg-gray-100 text-gray-700';
     }
   };
+
+  // Filter and pagination logic
+  const filteredDrivers = drivers.filter(driver => {
+    const matchesSearch = searchQuery === '' ||
+      (driver.name && driver.name.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (driver.id && String(driver.id).toLowerCase().includes(searchQuery.toLowerCase()));
+    const matchesStatus = statusFilter === 'All' || driver.status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
+
+  const totalPages = Math.ceil(filteredDrivers.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const currentDrivers = filteredDrivers.slice(startIndex, startIndex + itemsPerPage);
+
+  // Reset page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, statusFilter]);
 
   // Export drivers to Excel with all details
   const handleExportDrivers = async () => {
@@ -427,28 +442,8 @@ const DriverManagement = () => {
                       className="w-full px-4 py-3 border border-[#D0E0DB] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D8568] focus:border-transparent appearance-none bg-white text-sm font-medium text-[#0D5C4D] cursor-pointer"
                     >
                       <option>All</option>
-                      <option>Available</option>
-                      <option>On Trip</option>
-                      <option>Break</option>
-                      <option>Inactive</option>
-                    </select>
-                    <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-[#6B8782] pointer-events-none" />
-                  </div>
-                </div>
-
-                <div className="relative flex-1 min-w-0">
-                  <div className="text-xs text-[#6B8782] mb-1 font-medium">Vehicle: {vehicleFilter}</div>
-                  <div className="relative">
-                    <select
-                      value={vehicleFilter}
-                      onChange={(e) => setVehicleFilter(e.target.value)}
-                      className="w-full px-4 py-3 border border-[#D0E0DB] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D8568] focus:border-transparent appearance-none bg-white text-sm font-medium text-[#0D5C4D] cursor-pointer"
-                    >
-                      <option>All</option>
-                      <option>Tata Ace</option>
-                      <option>Mahindra Bolero</option>
-                      <option>Ashok Leyland</option>
-                      <option>Eicher Pro</option>
+                      <option>Present</option>
+                      <option>Absent</option>
                     </select>
                     <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-[#6B8782] pointer-events-none" />
                   </div>
@@ -472,61 +467,69 @@ const DriverManagement = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {drivers.map((driver, index) => (
-                    <tr key={index} className={`border-b border-[#D0E0DB] hover:bg-[#F0F4F3] transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-[#F0F4F3]/30'}`}>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          {driver.profileImage ? (
-                            <img
-                              src={`${import.meta.env.VITE_API_BASE_URL.replace('/api/v1', '')}${driver.profileImage}`}
-                              alt={driver.name}
-                              className="w-10 h-10 rounded-full object-cover"
-                              onError={(e) => {
-                                e.target.style.display = 'none';
-                                e.target.nextSibling.style.display = 'flex';
-                              }}
-                            />
-                          ) : null}
-                          <div className="w-10 h-10 rounded-full bg-[#B8F4D8] flex items-center justify-center text-[#0D5C4D] font-semibold text-sm" style={{ display: driver.profileImage ? 'none' : 'flex' }}>
-                            {driver.initial}
+                  {currentDrivers.length > 0 ? (
+                    currentDrivers.map((driver, index) => (
+                      <tr key={index} className={`border-b border-[#D0E0DB] hover:bg-[#F0F4F3] transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-[#F0F4F3]/30'}`}>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-3">
+                            {driver.profileImage ? (
+                              <img
+                                src={`${import.meta.env.VITE_API_BASE_URL.replace('/api/v1', '')}${driver.profileImage}`}
+                                alt={driver.name}
+                                className="w-10 h-10 rounded-full object-cover"
+                                onError={(e) => {
+                                  e.target.style.display = 'none';
+                                  e.target.nextSibling.style.display = 'flex';
+                                }}
+                              />
+                            ) : null}
+                            <div className="w-10 h-10 rounded-full bg-[#B8F4D8] flex items-center justify-center text-[#0D5C4D] font-semibold text-sm" style={{ display: driver.profileImage ? 'none' : 'flex' }}>
+                              {driver.initial}
+                            </div>
+                            <div>
+                              <div className="font-semibold text-[#0D5C4D]">{driver.name}</div>
+                              {/* <div className="text-xs text-[#6B8782]">{driver.id}</div> */}
+                            </div>
                           </div>
-                          <div>
-                            <div className="font-semibold text-[#0D5C4D]">{driver.name}</div>
-                            {/* <div className="text-xs text-[#6B8782]">{driver.id}</div> */}
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="text-sm text-[#0D5C4D]">{driver.phone}</div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="text-sm text-[#0D5C4D]">{driver.vehicle.name}</div>
+                          <div className="text-xs text-[#6B8782]">{driver.vehicle.number} • {driver.vehicle.capacity}</div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className={`px-3 py-1.5 rounded-full text-xs font-medium ${getDeliveryTypeColor(driver.deliveryType)}`}>
+                            {driver.deliveryType}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className={`px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1 w-fit ${getStatusColor(driver.status)}`}>
+                            <div className={`w-2 h-2 rounded-full ${getStatusDot(driver.status)}`}></div>
+                            {driver.status}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="relative dropdown-container">
+                            <button
+                              onClick={(event) => toggleDropdown(driver.id, event)}
+                              className="text-[#6B8782] hover:text-[#0D5C4D] transition-colors p-1 hover:bg-[#F0F4F3] rounded"
+                            >
+                              <MoreVertical size={20} />
+                            </button>
                           </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="text-sm text-[#0D5C4D]">{driver.phone}</div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="text-sm text-[#0D5C4D]">{driver.vehicle.name}</div>
-                        <div className="text-xs text-[#6B8782]">{driver.vehicle.number} • {driver.vehicle.capacity}</div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className={`px-3 py-1.5 rounded-full text-xs font-medium ${getDeliveryTypeColor(driver.deliveryType)}`}>
-                          {driver.deliveryType}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className={`px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1 w-fit ${getStatusColor(driver.status)}`}>
-                          <div className={`w-2 h-2 rounded-full ${getStatusDot(driver.status)}`}></div>
-                          {driver.status}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="relative dropdown-container">
-                          <button
-                            onClick={(event) => toggleDropdown(driver.id, event)}
-                            className="text-[#6B8782] hover:text-[#0D5C4D] transition-colors p-1 hover:bg-[#F0F4F3] rounded"
-                          >
-                            <MoreVertical size={20} />
-                          </button>
-                        </div>
-                      </td>
+                        </td>
 
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan="6" className="px-6 py-8 text-center text-gray-500">
+                        No drivers found matching your criteria
+                      </td>
                     </tr>
-                  ))}
+                  )}
                 </tbody>
               </table>
             </div>
@@ -534,16 +537,40 @@ const DriverManagement = () => {
             {/* Pagination */}
             <div className="flex items-center justify-between px-6 py-4 bg-[#F0F4F3] border-t border-[#D0E0DB]">
               <div className="text-sm text-[#6B8782]">
-                Showing {drivers.length} of {drivers.length} drivers
+                Showing {filteredDrivers.length === 0 ? 0 : startIndex + 1} to {Math.min(startIndex + itemsPerPage, filteredDrivers.length)} of {filteredDrivers.length} drivers
               </div>
               <div className="flex items-center gap-2">
-                <button className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors">
+                <button
+                  onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                  disabled={currentPage === 1}
+                  className={`px-3 py-2 rounded-lg transition-colors ${currentPage === 1 ? 'text-gray-400 cursor-not-allowed' : 'text-[#6B8782] hover:bg-[#D0E0DB]'}`}
+                >
                   &lt;
                 </button>
-                <button className="px-4 py-2 rounded-lg font-medium transition-colors bg-[#0D8568] text-white">
-                  1
-                </button>
-                <button className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors">
+
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => {
+                  const showPage = page === 1 || page === totalPages || (page >= currentPage - 1 && page <= currentPage + 1);
+                  const showEllipsis = (page === currentPage - 2 && currentPage > 3) || (page === currentPage + 2 && currentPage < totalPages - 2);
+
+                  if (showEllipsis) return <span key={page} className="px-2 text-gray-500">...</span>;
+                  if (!showPage) return null;
+
+                  return (
+                    <button
+                      key={page}
+                      onClick={() => setCurrentPage(page)}
+                      className={`px-4 py-2 rounded-lg font-medium transition-colors ${currentPage === page ? 'bg-[#0D8568] text-white' : 'text-[#6B8782] hover:bg-[#D0E0DB]'}`}
+                    >
+                      {page}
+                    </button>
+                  );
+                })}
+
+                <button
+                  onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                  disabled={currentPage === totalPages || totalPages === 0}
+                  className={`px-3 py-2 rounded-lg transition-colors ${currentPage === totalPages || totalPages === 0 ? 'text-gray-400 cursor-not-allowed' : 'text-[#6B8782] hover:bg-[#D0E0DB]'}`}
+                >
                   &gt;
                 </button>
               </div>

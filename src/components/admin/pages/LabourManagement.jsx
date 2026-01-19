@@ -18,13 +18,14 @@ const LabourManagement = () => {
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
   const [filters, setFilters] = useState({
     status: 'All',
-    workType: 'All',
-    location: 'All'
+    workType: 'All'
   });
   const dropdownRef = useRef(null);
   const [labours, setLabours] = useState([]);
   const [loading, setLoading] = useState(true);
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, labourId: null, labourName: '' });
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 7;
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -68,9 +69,21 @@ const LabourManagement = () => {
         profileImage: labour.profile_image,
         phone: labour.mobile_number,
         workType: labour.work_type,
-        status: labour.status,
-        statusColor: labour.status === 'Present' ? 'bg-[#10B981]' : labour.status === 'Absent' ? 'bg-red-500' : 'bg-orange-500',
-        dailyWage: `₹${labour.daily_wage}`
+        status: (() => {
+          const s = (labour.status || '').toLowerCase();
+          if (s === 'active' || s === 'present') return 'Present';
+          if (s === 'absent') return 'Absent';
+          return labour.status; // Fallback
+        })(),
+
+        statusColor: (() => {
+          const s = (labour.status || '').toLowerCase();
+          if (s === 'active' || s === 'present') return 'bg-[#10B981]';
+          if (s === 'absent') return 'bg-red-500';
+          return 'bg-orange-500';
+        })(),
+        dailyWage: `₹${labour.daily_wage}`,
+        location: labour.city || labour.address || ''
       }));
       setLabours(transformedLabours);
     } catch (error) {
@@ -125,6 +138,22 @@ const LabourManagement = () => {
 
   const handleTabChange = (tab) => {
     setActiveTab(tab);
+  };
+
+  // Filter and Pagination Logic
+  const filteredLabours = labours.filter(labour => {
+    const statusMatch = filters.status === 'All' || labour.status === filters.status;
+    const workTypeMatch = filters.workType === 'All' || labour.workType === filters.workType;
+    return statusMatch && workTypeMatch;
+  });
+
+  const totalPages = Math.ceil(filteredLabours.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const paginatedLabours = filteredLabours.slice(startIndex, startIndex + itemsPerPage);
+
+  const handleFilterChange = (key, value) => {
+    setFilters(prev => ({ ...prev, [key]: value }));
+    setCurrentPage(1);
   };
 
   // Export labours to Excel with all details
@@ -260,8 +289,8 @@ const LabourManagement = () => {
           <button
             onClick={() => handleTabChange('labourList')}
             className={`px-6 py-2.5 rounded-lg font-medium text-sm transition-colors ${activeTab === 'labourList'
-                ? 'bg-[#0D7C66] text-white'
-                : 'bg-[#D4F4E8] text-[#0D5C4D] hover:bg-[#B8F4D8]'
+              ? 'bg-[#0D7C66] text-white'
+              : 'bg-[#D4F4E8] text-[#0D5C4D] hover:bg-[#B8F4D8]'
               }`}
           >
             Labour List
@@ -327,13 +356,12 @@ const LabourManagement = () => {
             <div className="relative">
               <select
                 value={filters.status}
-                onChange={(e) => setFilters({ ...filters, status: e.target.value })}
-                className="appearance-none bg-white border border-[#D0E0DB] rounded-lg px-4 py-2 pr-10 text-sm text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568] cursor-pointer"
+                onChange={(e) => handleFilterChange('status', e.target.value)}
+                className="appearance-none bg-white border border-[#D0E0DB] rounded-lg px-4 py-2 pr-10 text-sm text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568] cursor-pointer min-w-[150px]"
               >
                 <option value="All">Status: All</option>
                 <option value="Present">Present</option>
                 <option value="Absent">Absent</option>
-                <option value="Half Day">Half Day</option>
               </select>
               <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-[#6B8782] pointer-events-none" size={16} />
             </div>
@@ -342,28 +370,13 @@ const LabourManagement = () => {
             <div className="relative">
               <select
                 value={filters.workType}
-                onChange={(e) => setFilters({ ...filters, workType: e.target.value })}
-                className="appearance-none bg-white border border-[#D0E0DB] rounded-lg px-4 py-2 pr-10 text-sm text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568] cursor-pointer"
+                onChange={(e) => handleFilterChange('workType', e.target.value)}
+                className="appearance-none bg-white border border-[#D0E0DB] rounded-lg px-4 py-2 pr-10 text-sm text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568] cursor-pointer min-w-[150px]"
               >
                 <option value="All">Work Type: All</option>
-                <option value="Packing">Packing</option>
-                <option value="Loading">Loading</option>
-                <option value="Sorting">Sorting</option>
-              </select>
-              <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-[#6B8782] pointer-events-none" size={16} />
-            </div>
-
-            {/* Location Filter */}
-            <div className="relative">
-              <select
-                value={filters.location}
-                onChange={(e) => setFilters({ ...filters, location: e.target.value })}
-                className="appearance-none bg-white border border-[#D0E0DB] rounded-lg px-4 py-2 pr-10 text-sm text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568] cursor-pointer"
-              >
-                <option value="All">Location: All</option>
-                <option value="Chennai">Chennai</option>
-                <option value="Coimbatore">Coimbatore</option>
-                <option value="Madurai">Madurai</option>
+                <option value="Normal">Normal</option>
+                <option value="Medium">Medium</option>
+                <option value="Heavy">Heavy</option>
               </select>
               <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-[#6B8782] pointer-events-none" size={16} />
             </div>
@@ -398,7 +411,7 @@ const LabourManagement = () => {
                     No labours found
                   </td>
                 </tr>
-              ) : labours.map((labour, index) => (
+              ) : paginatedLabours.map((labour, index) => (
                 <tr
                   key={labour.id}
                   className={`border-b border-[#D0E0DB] hover:bg-[#F0F4F3] transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-[#F0F4F3]/30'
@@ -465,28 +478,54 @@ const LabourManagement = () => {
         {/* Pagination */}
         <div className="flex flex-col sm:flex-row items-center justify-between gap-4 px-4 sm:px-6 py-4 bg-[#F0F4F3] border-t border-[#D0E0DB]">
           <div className="text-sm text-[#6B8782]">
-            Showing {labours.length} of {labours.length} Labours
+            Showing {filteredLabours.length === 0 ? 0 : startIndex + 1} to {Math.min(startIndex + itemsPerPage, filteredLabours.length)} of {filteredLabours.length} Labours
           </div>
           <div className="flex items-center gap-1 sm:gap-2 flex-wrap justify-center">
-            <button className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors">
+            <button
+              onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+              disabled={currentPage === 1}
+              className={`px-3 py-2 rounded-lg transition-colors ${currentPage === 1 ? 'text-gray-400 cursor-not-allowed' : 'text-[#6B8782] hover:bg-[#D0E0DB]'}`}
+            >
               &lt;
             </button>
-            <button className="px-3 sm:px-4 py-2 rounded-lg font-medium transition-colors bg-[#10B981] text-white">
-              1
-            </button>
-            <button className="px-3 sm:px-4 py-2 rounded-lg font-medium transition-colors text-[#6B8782] hover:bg-[#D0E0DB]">
-              2
-            </button>
-            <button className="hidden sm:block px-4 py-2 rounded-lg font-medium transition-colors text-[#6B8782] hover:bg-[#D0E0DB]">
-              ...
-            </button>
-            <button className="px-3 sm:px-4 py-2 rounded-lg font-medium transition-colors text-[#6B8782] hover:bg-[#D0E0DB]">
-              9
-            </button>
-            <button className="px-3 sm:px-4 py-2 rounded-lg font-medium transition-colors text-[#6B8782] hover:bg-[#D0E0DB]">
-              10
-            </button>
-            <button className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors">
+
+            {[...Array(totalPages)].map((_, index) => {
+              const pageNumber = index + 1;
+              if (
+                pageNumber === 1 ||
+                pageNumber === totalPages ||
+                (pageNumber >= currentPage - 1 && pageNumber <= currentPage + 1)
+              ) {
+                return (
+                  <button
+                    key={pageNumber}
+                    onClick={() => setCurrentPage(pageNumber)}
+                    className={`px-3 sm:px-4 py-2 rounded-lg font-medium transition-colors ${currentPage === pageNumber
+                      ? 'bg-[#10B981] text-white'
+                      : 'text-[#6B8782] hover:bg-[#D0E0DB]'
+                      }`}
+                  >
+                    {pageNumber}
+                  </button>
+                );
+              } else if (
+                pageNumber === currentPage - 2 ||
+                pageNumber === currentPage + 2
+              ) {
+                return (
+                  <span key={pageNumber} className="px-2 text-[#6B8782]">
+                    ...
+                  </span>
+                );
+              }
+              return null;
+            })}
+
+            <button
+              onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+              disabled={currentPage === totalPages}
+              className={`px-3 py-2 rounded-lg transition-colors ${currentPage === totalPages ? 'text-gray-400 cursor-not-allowed' : 'text-[#6B8782] hover:bg-[#D0E0DB]'}`}
+            >
               &gt;
             </button>
           </div>

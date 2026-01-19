@@ -75,6 +75,11 @@ const ReportFarmer = () => {
   const processOrdersForFarmers = async (orders, farmersList) => {
     const processedData = [];
 
+    const cleanForMatching = (name) => {
+      if (!name) return '';
+      return name.replace(/^\d+\s*-\s*/, '').trim();
+    };
+
     for (const order of orders) {
       try {
         const assignmentRes = await getOrderAssignment(order.oid).catch(() => null);
@@ -87,6 +92,22 @@ const ReportFarmer = () => {
               : assignmentRes.data.product_assignments;
           } catch (e) {
             assignments = [];
+          }
+
+          // Get Stage 4 data for pricing
+          let stage4ProductRows = [];
+          try {
+            if (assignmentRes.data?.stage4_data) {
+              const stage4Data = typeof assignmentRes.data.stage4_data === 'string'
+                ? JSON.parse(assignmentRes.data.stage4_data)
+                : assignmentRes.data.stage4_data;
+
+              if (stage4Data?.reviewData?.productRows) {
+                stage4ProductRows = stage4Data.reviewData.productRows;
+              }
+            }
+          } catch (e) {
+            console.error('Error parsing stage4_data:', e);
           }
 
           // Group assignments by farmer
@@ -104,7 +125,56 @@ const ReportFarmer = () => {
           // Create farmer data array for this order
           const farmerDataArray = Object.entries(farmerAssignmentsMap).map(([farmerId, farmerAssignments]) => {
             const farmer = farmersList.find(f => f.fid == farmerId);
-            const totalAmount = farmerAssignments.reduce((sum, assignment) => {
+
+            // Enrich assignments with missing qty/price/boxes
+            const enrichedAssignments = farmerAssignments.map(assignment => {
+              const cleanAssignmentProduct = cleanForMatching(assignment.product);
+
+              let matchingItem = null;
+              // Search for matching item if we need to backfill something
+              if (!assignment.assignedQty || !assignment.price || (!assignment.assignedBoxes && !assignment.noOfBoxes)) {
+                matchingItem = order.items?.find(item => {
+                  const itemProduct = item.product_name || item.product || '';
+                  const cleanItemProduct = cleanForMatching(itemProduct);
+                  return cleanItemProduct === cleanAssignmentProduct;
+                });
+              }
+
+              // Get quantity
+              let qty = parseFloat(assignment.assignedQty || assignment.quantity || assignment.qty) || 0;
+              if (!qty && matchingItem) {
+                qty = parseFloat(matchingItem.net_weight) || parseFloat(matchingItem.quantity) || 0;
+              }
+
+              // Get boxes
+              let boxes = parseFloat(assignment.assignedBoxes || assignment.boxes || assignment.noOfBoxes) || 0;
+              if (!boxes && matchingItem) {
+                boxes = parseFloat(matchingItem.no_of_boxes || matchingItem.boxes || matchingItem.box_count || matchingItem.quantity) || 0;
+              }
+
+              // Get price
+              let price = parseFloat(assignment.price || assignment.rate || assignment.unitPrice) || 0;
+              if (!price) {
+                const stage4Entry = stage4ProductRows.find(s4 => {
+                  const s4Product = cleanForMatching(s4.product || s4.product_name || '');
+                  const s4AssignedTo = s4.assignedTo || s4.assigned_to || '';
+                  const assignedTo = assignment.assignedTo || '';
+                  return s4Product === cleanAssignmentProduct && s4AssignedTo === assignedTo;
+                });
+                if (stage4Entry) {
+                  price = parseFloat(stage4Entry.price) || 0;
+                }
+              }
+
+              return {
+                ...assignment,
+                assignedQty: qty,
+                assignedBoxes: boxes,
+                price: price
+              };
+            });
+
+            const totalAmount = enrichedAssignments.reduce((sum, assignment) => {
               const qty = parseFloat(assignment.assignedQty) || 0;
               const price = parseFloat(assignment.price) || 0;
               return sum + (qty * price);
@@ -115,7 +185,7 @@ const ReportFarmer = () => {
               farmerName: farmer?.farmer_name || 'Unknown',
               farmerPhone: farmer?.phone || 'N/A',
               amount: totalAmount,
-              assignments: farmerAssignments
+              assignments: enrichedAssignments
             };
           });
 
@@ -179,39 +249,65 @@ const ReportFarmer = () => {
       .trim();
   };
 
-  // Filter data based on date range and search
+  // Group data by farmer - one row per farmer
   const filteredData = React.useMemo(() => {
-    const flattenedData = [];
+    // First, aggregate all data by farmer
+    const farmerMap = new Map();
+
     orderHistoryData.forEach(({ order, farmerData }) => {
       farmerData.forEach(farmer => {
-        flattenedData.push({ order, farmer });
+        // Apply date filter
+        if (fromDate || toDate) {
+          const orderDate = new Date(order.createdAt);
+          if (fromDate && orderDate < new Date(fromDate)) return;
+          if (toDate) {
+            const toDateTime = new Date(toDate);
+            toDateTime.setHours(23, 59, 59, 999);
+            if (orderDate > toDateTime) return;
+          }
+        }
+
+        const farmerId = farmer.farmerId;
+        if (!farmerMap.has(farmerId)) {
+          farmerMap.set(farmerId, {
+            farmerId,
+            farmerName: farmer.farmerName,
+            farmerPhone: farmer.farmerPhone,
+            totalAmount: 0,
+            paidAmount: 0,
+            pendingAmount: 0,
+            orderCount: 0,
+            orders: []
+          });
+        }
+
+        const farmerEntry = farmerMap.get(farmerId);
+        farmerEntry.totalAmount += farmer.amount;
+        farmerEntry.orderCount += 1;
+        farmerEntry.orders.push(order);
+
+        if (order.payment_status === 'paid' || order.payment_status === 'completed') {
+          farmerEntry.paidAmount += farmer.amount;
+        } else {
+          farmerEntry.pendingAmount += farmer.amount;
+        }
       });
     });
 
-    return flattenedData.filter(({ order, farmer }) => {
-      // Date filter
-      if (fromDate || toDate) {
-        const orderDate = new Date(order.createdAt);
-        if (fromDate && orderDate < new Date(fromDate)) return false;
-        if (toDate) {
-          const toDateTime = new Date(toDate);
-          toDateTime.setHours(23, 59, 59, 999);
-          if (orderDate > toDateTime) return false;
-        }
-      }
+    // Convert map to array
+    let farmersArray = Array.from(farmerMap.values());
 
-      // Search filter
-      if (searchTerm) {
-        const query = searchTerm.toLowerCase();
-        return (
-          order.oid.toString().includes(query) ||
-          farmer.farmerName.toLowerCase().includes(query) ||
-          farmer.farmerId.toString().includes(query)
-        );
-      }
+    // Apply search filter
+    if (searchTerm) {
+      const query = searchTerm.toLowerCase();
+      farmersArray = farmersArray.filter(farmer =>
+        farmer.farmerName.toLowerCase().includes(query) ||
+        farmer.farmerId.toString().includes(query) ||
+        farmer.farmerPhone.toLowerCase().includes(query)
+      );
+    }
 
-      return true;
-    });
+    return farmersArray;
   }, [orderHistoryData, fromDate, toDate, searchTerm]);
 
   // Export filtered data to Excel
@@ -587,10 +683,7 @@ const ReportFarmer = () => {
           <table className="w-full">
             <thead>
               <tr className="bg-[#D4F4E8]">
-                <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Order ID</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Farmer Name</th>
-                <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Products</th>
-                <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Order Date</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Amount</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Status</th>
                 <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Action</th>
@@ -599,17 +692,17 @@ const ReportFarmer = () => {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="7" className="px-6 py-12 text-center">
+                  <td colSpan="4" className="px-6 py-12 text-center">
                     <div className="flex items-center justify-center gap-2">
                       <div className="w-5 h-5 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
-                      <span className="text-sm text-gray-600">Loading order history...</span>
+                      <span className="text-sm text-gray-600">Loading farmers...</span>
                     </div>
                   </td>
                 </tr>
               ) : orderHistoryData.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="px-6 py-12 text-center text-sm text-gray-600">
-                    No order history found
+                  <td colSpan="4" className="px-6 py-12 text-center text-sm text-gray-600">
+                    No farmers found
                   </td>
                 </tr>
               ) : (() => {
@@ -620,78 +713,52 @@ const ReportFarmer = () => {
                 const endIndex = startIndex + itemsPerPage;
                 const currentData = filteredData.slice(startIndex, endIndex);
 
-                return currentData.map((item, index) => {
-                  const { order, farmer } = item;
-                  const orderDate = order.createdAt ? new Date(order.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: '2-digit' }) : 'N/A';
-                  const products = order.items || [];
-                  const displayProducts = products.slice(0, 2);
-                  const remainingCount = products.length - displayProducts.length;
+                return currentData.map((farmer, index) => {
+                  // Determine if fully paid or has any unpaid orders
+                  const isPaid = farmer.pendingAmount === 0;
 
                   return (
                     <tr
-                      key={`${order.oid}-${farmer.farmerId}-${index}`}
+                      key={`${farmer.farmerId}-${index}`}
                       className={`border-b border-[#D0E0DB] hover:bg-[#F0F4F3] transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-[#F0F4F3]/30'}`}
                     >
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
                           <div className="w-10 h-10 rounded-full bg-[#B8F4D8] flex items-center justify-center text-[#0D5C4D] font-semibold text-sm">
-                            {order.customer_name?.substring(0, 2).toUpperCase() || 'OR'}
+                            {farmer.farmerName?.substring(0, 2).toUpperCase() || 'F'}
                           </div>
-                          <span className="text-sm font-semibold text-[#0D5C4D]">{order.oid}</span>
+                          <div>
+                            <div className="text-sm text-[#0D5C4D] font-semibold">{farmer.farmerName}</div>
+                            <div className="text-xs text-[#6B8782]">ID: {farmer.farmerId}</div>
+                          </div>
                         </div>
                       </td>
 
                       <td className="px-6 py-4">
-                        <div className="text-sm text-[#0D5C4D] font-semibold">{farmer.farmerName}</div>
-                        <div className="text-xs text-[#6B8782]">ID: {farmer.farmerId}</div>
+                        <div className="text-sm font-semibold text-[#0D5C4D]">₹{farmer.totalAmount.toLocaleString()}</div>
+                        <div className="text-xs text-[#6B8782]">{farmer.orderCount} order{farmer.orderCount !== 1 ? 's' : ''}</div>
                       </td>
 
                       <td className="px-6 py-4">
-                        <div className="flex flex-wrap gap-1.5">
-                          {displayProducts.map((product, idx) => (
-                            <span
-                              key={idx}
-                              className="px-3 py-1.5 rounded-full text-xs font-medium bg-[#D4F4E8] text-[#047857]"
-                            >
-                              {cleanProductName(product.product_name || product.product)}
-                            </span>
-                          ))}
-                          {remainingCount > 0 && (
-                            <span className="px-3 py-1.5 rounded-full text-xs font-medium bg-[#D4E8FF] text-[#0066CC]">
-                              +{remainingCount} more
-                            </span>
-                          )}
-                        </div>
-                      </td>
-
-                      <td className="px-6 py-4">
-                        <div className="text-sm text-[#0D5C4D]">{orderDate}</div>
-                      </td>
-
-                      <td className="px-6 py-4">
-                        <div className="text-sm font-semibold text-[#0D5C4D]">₹{farmer.amount.toLocaleString()}</div>
-                      </td>
-
-                      <td className="px-6 py-4">
-                        <span className={`px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1 w-fit ${order.payment_status === 'paid' || order.payment_status === 'completed'
+                        <span className={`px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1 w-fit ${isPaid
                           ? 'bg-[#4ED39A] text-white'
                           : 'bg-[#FFE0E0] text-[#CC0000]'
                           }`}>
-                          <div className={`w-2 h-2 rounded-full ${order.payment_status === 'paid' || order.payment_status === 'completed'
+                          <div className={`w-2 h-2 rounded-full ${isPaid
                             ? 'bg-white'
                             : 'bg-[#CC0000]'
                             }`}></div>
-                          {order.payment_status === 'paid' || order.payment_status === 'completed' ? 'Paid' : 'Unpaid'}
+                          {isPaid ? 'Fully Paid' : 'Unpaid'}
                         </span>
                       </td>
 
                       <td className="px-6 py-4">
                         <div className="flex gap-2">
                           <button
-                            onClick={() => navigate(`/farmers/${farmer.farmerId}/orders/${order.oid}`)}
+                            onClick={() => navigate(`/admin/report-farmer/${farmer.farmerId}`)}
                             className="px-4 py-2 bg-[#0D8568] hover:bg-[#0a6354] text-white font-semibold rounded-lg text-xs transition-colors"
                           >
-                            View
+                            View Order
                           </button>
                           <button
                             onClick={() => handleExportFarmer(farmer.farmerId, farmer.farmerName)}

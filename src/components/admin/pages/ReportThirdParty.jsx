@@ -1,17 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronDown, ArrowLeft, Search } from 'lucide-react';
+import { ArrowLeft, Download, FileDown } from 'lucide-react';
 import { getAllOrders } from '../../../api/orderApi';
 import { getOrderAssignment } from '../../../api/orderAssignmentApi';
 import { getAllThirdParties } from '../../../api/thirdPartyApi';
 import * as XLSX from 'xlsx-js-style';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 
 const ReportThirdParty = () => {
     const navigate = useNavigate();
     const [currentPage, setCurrentPage] = useState(1);
     const [searchTerm, setSearchTerm] = useState('');
-    const [timeFilter, setTimeFilter] = useState('All Time');
-    const [statusFilter, setStatusFilter] = useState('All Status');
+    const [fromDate, setFromDate] = useState('');
+    const [toDate, setToDate] = useState('');
 
     // Real data states
     const [allOrders, setAllOrders] = useState([]);
@@ -61,6 +63,11 @@ const ReportThirdParty = () => {
     const processOrdersForThirdParties = async (orders, thirdPartiesList) => {
         const processedData = [];
 
+        const cleanForMatching = (name) => {
+            if (!name) return '';
+            return name.replace(/^\d+\s*-\s*/, '').trim();
+        };
+
         for (const order of orders) {
             try {
                 const assignmentRes = await getOrderAssignment(order.oid).catch(() => null);
@@ -73,6 +80,22 @@ const ReportThirdParty = () => {
                             : assignmentRes.data.product_assignments;
                     } catch (e) {
                         assignments = [];
+                    }
+
+                    // Get Stage 4 data for pricing
+                    let stage4ProductRows = [];
+                    try {
+                        if (assignmentRes.data?.stage4_data) {
+                            const stage4Data = typeof assignmentRes.data.stage4_data === 'string'
+                                ? JSON.parse(assignmentRes.data.stage4_data)
+                                : assignmentRes.data.stage4_data;
+
+                            if (stage4Data?.reviewData?.productRows) {
+                                stage4ProductRows = stage4Data.reviewData.productRows;
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Error parsing stage4_data:', e);
                     }
 
                     // Group assignments by third party
@@ -91,13 +114,47 @@ const ReportThirdParty = () => {
                     const thirdPartyDataArray = Object.entries(thirdPartyAssignmentsMap).map(([thirdPartyId, thirdPartyAssignments]) => {
                         const thirdParty = thirdPartiesList.find(tp => tp.tpid == thirdPartyId);
 
-                        // Debug: Log assignment data
-                        console.log('Third Party Assignments for ID', thirdPartyId, ':', thirdPartyAssignments);
+                        // Enrich assignments with missing qty/price
+                        const enrichedAssignments = thirdPartyAssignments.map(assignment => {
+                            const cleanAssignmentProduct = cleanForMatching(assignment.product);
 
-                        const totalAmount = thirdPartyAssignments.reduce((sum, assignment) => {
+                            // Get quantity
+                            let qty = parseFloat(assignment.assignedQty) || 0;
+                            if (!qty) {
+                                const matchingItem = order.items?.find(item => {
+                                    const itemProduct = item.product_name || item.product || '';
+                                    const cleanItemProduct = cleanForMatching(itemProduct);
+                                    return cleanItemProduct === cleanAssignmentProduct;
+                                });
+                                if (matchingItem) {
+                                    qty = parseFloat(matchingItem.net_weight) || parseFloat(matchingItem.quantity) || 0;
+                                }
+                            }
+
+                            // Get price
+                            let price = parseFloat(assignment.price) || 0;
+                            if (!price) {
+                                const stage4Entry = stage4ProductRows.find(s4 => {
+                                    const s4Product = cleanForMatching(s4.product || s4.product_name || '');
+                                    const s4AssignedTo = s4.assignedTo || s4.assigned_to || '';
+                                    const assignedTo = assignment.assignedTo || '';
+                                    return s4Product === cleanAssignmentProduct && s4AssignedTo === assignedTo;
+                                });
+                                if (stage4Entry) {
+                                    price = parseFloat(stage4Entry.price) || 0;
+                                }
+                            }
+
+                            return {
+                                ...assignment,
+                                assignedQty: qty,
+                                price: price
+                            };
+                        });
+
+                        const totalAmount = enrichedAssignments.reduce((sum, assignment) => {
                             const qty = parseFloat(assignment.assignedQty) || 0;
                             const price = parseFloat(assignment.price) || 0;
-                            console.log(`Assignment - Qty: ${qty}, Price: ${price}, Total: ${qty * price}`, assignment);
                             return sum + (qty * price);
                         }, 0);
 
@@ -106,7 +163,7 @@ const ReportThirdParty = () => {
                             thirdPartyName: thirdParty?.third_party_name || 'Unknown',
                             thirdPartyPhone: thirdParty?.phone || 'N/A',
                             amount: totalAmount,
-                            assignments: thirdPartyAssignments
+                            assignments: enrichedAssignments
                         };
                     });
 
@@ -159,65 +216,134 @@ const ReportThirdParty = () => {
 
     const stats = calculateStats();
 
-    // Export to Excel function
-    const handleExport = () => {
-        // Flatten the data for export
-        const flattenedData = [];
+    // Clean product name - remove leading numbers like "1 - " and Tamil characters
+    const cleanProductName = (name) => {
+        if (!name) return '';
+        return name
+            .replace(/^\d+\s*-\s*/, '') // Remove leading numbers
+            .replace(/[\u0B80-\u0BFF]/g, '') // Remove Tamil characters
+            .replace(/\(\s*\)/g, '') // Remove empty parentheses
+            .replace(/\s+/g, ' ') // Normalize spaces
+            .trim();
+    };
+
+    // Group data by third party - one row per third party
+    const filteredData = React.useMemo(() => {
+        // First, aggregate all data by third party
+        const thirdPartyMap = new Map();
+
         orderHistoryData.forEach(({ order, thirdPartyData }) => {
             thirdPartyData.forEach(thirdParty => {
-                const orderDate = order.createdAt ? new Date(order.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: '2-digit' }) : 'N/A';
-                const products = order.items || [];
-                const productNames = products.map(p => p.product_name || p.product).join(', ');
-                const paymentStatus = order.payment_status === 'paid' || order.payment_status === 'completed' ? 'Paid' : 'Unpaid';
+                // Apply date filter
+                if (fromDate || toDate) {
+                    const orderDate = new Date(order.createdAt);
+                    if (fromDate && orderDate < new Date(fromDate)) return;
+                    if (toDate) {
+                        const toDateTime = new Date(toDate);
+                        toDateTime.setHours(23, 59, 59, 999);
+                        if (orderDate > toDateTime) return;
+                    }
+                }
 
-                flattenedData.push({
-                    'Order ID': order.oid,
-                    'Third Party ID': thirdParty.thirdPartyId,
-                    'Third Party Name': thirdParty.thirdPartyName,
-                    'Products': productNames,
-                    'Order Date': orderDate,
-                    'Amount': thirdParty.amount,
-                    'Payment Status': paymentStatus,
-                    'Customer Name': order.customer_name || 'N/A',
-                    'Phone Number': order.phone_number || 'N/A'
-                });
+                const thirdPartyId = thirdParty.thirdPartyId;
+                if (!thirdPartyMap.has(thirdPartyId)) {
+                    thirdPartyMap.set(thirdPartyId, {
+                        thirdPartyId,
+                        thirdPartyName: thirdParty.thirdPartyName,
+                        thirdPartyPhone: thirdParty.thirdPartyPhone,
+                        totalAmount: 0,
+                        paidAmount: 0,
+                        pendingAmount: 0,
+                        orderCount: 0,
+                        orders: []
+                    });
+                }
+
+                const thirdPartyEntry = thirdPartyMap.get(thirdPartyId);
+                thirdPartyEntry.totalAmount += thirdParty.amount;
+                thirdPartyEntry.orderCount += 1;
+                thirdPartyEntry.orders.push(order);
+
+                if (order.payment_status === 'paid' || order.payment_status === 'completed') {
+                    thirdPartyEntry.paidAmount += thirdParty.amount;
+                } else {
+                    thirdPartyEntry.pendingAmount += thirdParty.amount;
+                }
             });
         });
 
-        if (flattenedData.length === 0) {
+        // Convert map to array
+        let thirdPartiesArray = Array.from(thirdPartyMap.values());
+
+        // Apply search filter
+        if (searchTerm) {
+            const query = searchTerm.toLowerCase();
+            thirdPartiesArray = thirdPartiesArray.filter(tp =>
+                tp.thirdPartyName.toLowerCase().includes(query) ||
+                tp.thirdPartyId.toString().includes(query) ||
+                tp.thirdPartyPhone.toLowerCase().includes(query)
+            );
+        }
+
+        return thirdPartiesArray;
+    }, [orderHistoryData, fromDate, toDate, searchTerm]);
+
+    // Export filtered data to Excel
+    const handleExportExcelSafe = () => {
+        if (filteredData.length === 0) {
             alert('No data to export');
             return;
         }
 
-        // Create worksheet from data
-        const worksheet = XLSX.utils.json_to_sheet(flattenedData);
+        const exportData = filteredData.map(tp => ({
+            'Third Party ID': tp.thirdPartyId,
+            'Third Party Name': tp.thirdPartyName,
+            'Phone': tp.thirdPartyPhone,
+            'Orders': tp.orderCount,
+            'Total Amount': parseFloat(tp.totalAmount).toFixed(2),
+            'Paid Amount': parseFloat(tp.paidAmount).toFixed(2),
+            'Pending Amount': parseFloat(tp.pendingAmount).toFixed(2)
+        }));
 
-        // Auto-size columns
-        const columnWidths = [];
-        const headers = Object.keys(flattenedData[0]);
-
-        headers.forEach((header, idx) => {
-            let maxWidth = header.length;
-            flattenedData.forEach(row => {
-                const value = String(row[header] || '');
-                maxWidth = Math.max(maxWidth, value.length);
-            });
-            // Add some padding and cap at 50 characters
-            columnWidths.push({ wch: Math.min(maxWidth + 2, 50) });
-        });
-
-        worksheet['!cols'] = columnWidths;
-
-        // Create workbook and add worksheet
+        const worksheet = XLSX.utils.json_to_sheet(exportData);
+        // Auto-size
+        worksheet['!cols'] = [{ wch: 10 }, { wch: 20 }, { wch: 15 }, { wch: 10 }, { wch: 15 }, { wch: 15 }, { wch: 15 }];
         const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, 'Third Party Order History');
-
-        // Generate Excel file and trigger download
-        const fileName = `third_party_order_history_${new Date().toISOString().split('T')[0]}.xlsx`;
-        XLSX.writeFile(workbook, fileName);
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Third Parties');
+        XLSX.writeFile(workbook, `Third_Parties_Report_${new Date().toISOString().split('T')[0]}.xlsx`);
     };
 
-    // Export individual third party data to Excel
+    const handleExportPDFSafe = () => {
+        if (filteredData.length === 0) {
+            alert('No data to export');
+            return;
+        }
+
+        const doc = new jsPDF();
+        doc.setFontSize(16);
+        doc.text('Third Party Report', 105, 15, { align: 'center' });
+
+        const tableData = filteredData.map(tp => [
+            tp.thirdPartyId,
+            tp.thirdPartyName,
+            tp.thirdPartyPhone,
+            tp.orderCount,
+            tp.totalAmount.toFixed(2),
+            tp.pendingAmount > 0 ? 'Pending' : 'Paid'
+        ]);
+
+        doc.autoTable({
+            startY: 25,
+            head: [['ID', 'Name', 'Phone', 'Orders', 'Amount', 'Status']],
+            body: tableData,
+            theme: 'grid',
+            headStyles: { fillColor: [13, 92, 77] },
+        });
+
+        doc.save(`Third_Parties_Report_${new Date().toISOString().split('T')[0]}.pdf`);
+    };
+
+    // Export individual third party data to Excel (Bill-like)
     const handleExportThirdParty = (thirdPartyId, thirdPartyName) => {
         // Filter data for the specific third party
         const thirdPartyOrders = [];
@@ -428,47 +554,54 @@ const ReportThirdParty = () => {
                 <h1 className="text-2xl font-bold text-[#0D5C4D]">Third Party Order History</h1>
             </div>
 
-            {/* Search and Filters */}
-            <div className="flex flex-col sm:flex-row gap-4 mb-6">
-                <div className="flex-1 relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                    <input
-                        type="text"
-                        placeholder="Search by order ID, third party name..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent"
-                    />
+            {/* Filters */}
+            <div className="bg-white rounded-2xl p-6 mb-6 border border-[#D0E0DB]">
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+                    <div>
+                        <label className="block text-sm font-medium text-[#0D5C4D] mb-2">From Date</label>
+                        <input
+                            type="date"
+                            value={fromDate}
+                            onChange={(e) => setFromDate(e.target.value)}
+                            className="w-full px-3 py-2 border border-[#D0E0DB] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D8568]"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-[#0D5C4D] mb-2">To Date</label>
+                        <input
+                            type="date"
+                            value={toDate}
+                            onChange={(e) => setToDate(e.target.value)}
+                            className="w-full px-3 py-2 border border-[#D0E0DB] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D8568]"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-[#0D5C4D] mb-2">Search</label>
+                        <input
+                            type="text"
+                            placeholder="Third Party Name/ID/Phone"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="w-full px-3 py-2 border border-[#D0E0DB] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D8568]"
+                        />
+                    </div>
+                    <div className="flex items-end gap-2 md:col-span-2">
+                        <button
+                            onClick={handleExportExcelSafe}
+                            className="flex-1 px-4 py-2 bg-[#10B981] text-white rounded-lg hover:bg-[#059669] transition-colors flex items-center justify-center gap-2"
+                        >
+                            <Download size={16} />
+                            Excel
+                        </button>
+                        <button
+                            onClick={handleExportPDFSafe}
+                            className="flex-1 px-4 py-2 bg-[#3B82F6] text-white rounded-lg hover:bg-[#2563EB] transition-colors flex items-center justify-center gap-2"
+                        >
+                            <FileDown size={16} />
+                            PDF
+                        </button>
+                    </div>
                 </div>
-                <div className="relative">
-                    <select
-                        value={timeFilter}
-                        onChange={(e) => setTimeFilter(e.target.value)}
-                        className="appearance-none px-4 py-2.5 pr-10 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent cursor-pointer min-w-[140px]"
-                    >
-                        <option>All Time</option>
-                        <option>Today</option>
-                        <option>This Week</option>
-                        <option>This Month</option>
-                        <option>Last Month</option>
-                    </select>
-                    <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none" />
-                </div>
-                <div className="relative">
-                    <select
-                        value={statusFilter}
-                        onChange={(e) => setStatusFilter(e.target.value)}
-                        className="appearance-none px-4 py-2.5 pr-10 bg-white border border-gray-200 rounded-lg text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#0D7C66] focus:border-transparent cursor-pointer min-w-[140px]"
-                    >
-                        <option>All Status</option>
-                        <option>Paid</option>
-                        <option>Unpaid</option>
-                    </select>
-                    <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4 pointer-events-none" />
-                </div>
-                <button onClick={handleExport} className="px-6 py-2.5 bg-[#1DB890] hover:bg-[#19a57e] text-white font-semibold rounded-lg text-sm transition-colors whitespace-nowrap">
-                    Export CSV
-                </button>
             </div>
 
             {/* Summary Cards */}
@@ -501,10 +634,7 @@ const ReportThirdParty = () => {
                     <table className="w-full">
                         <thead>
                             <tr className="bg-[#D4F4E8]">
-                                <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Order ID</th>
                                 <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Third Party Name</th>
-                                <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Products</th>
-                                <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Order Date</th>
                                 <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Amount</th>
                                 <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Status</th>
                                 <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">Action</th>
@@ -513,113 +643,76 @@ const ReportThirdParty = () => {
                         <tbody>
                             {loading ? (
                                 <tr>
-                                    <td colSpan="7" className="px-6 py-12 text-center">
+                                    <td colSpan="4" className="px-6 py-12 text-center">
                                         <div className="flex items-center justify-center gap-2">
                                             <div className="w-5 h-5 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
-                                            <span className="text-sm text-gray-600">Loading order history...</span>
+                                            <span className="text-sm text-gray-600">Loading third parties...</span>
                                         </div>
                                     </td>
                                 </tr>
                             ) : orderHistoryData.length === 0 ? (
                                 <tr>
-                                    <td colSpan="7" className="px-6 py-12 text-center text-sm text-gray-600">
-                                        No order history found
+                                    <td colSpan="4" className="px-6 py-12 text-center text-sm text-gray-600">
+                                        No third parties found
                                     </td>
                                 </tr>
                             ) : (() => {
-                                // Flatten the data: create one row per third party per order
-                                const flattenedData = [];
-                                orderHistoryData.forEach(({ order, thirdPartyData }) => {
-                                    thirdPartyData.forEach(thirdParty => {
-                                        flattenedData.push({
-                                            order,
-                                            thirdParty
-                                        });
-                                    });
-                                });
-
                                 // Pagination
                                 const itemsPerPage = 7;
-                                const totalPages = Math.ceil(flattenedData.length / itemsPerPage);
+                                const totalPages = Math.ceil(filteredData.length / itemsPerPage);
                                 const startIndex = (currentPage - 1) * itemsPerPage;
                                 const endIndex = startIndex + itemsPerPage;
-                                const currentData = flattenedData.slice(startIndex, endIndex);
+                                const currentData = filteredData.slice(startIndex, endIndex);
 
-                                return currentData.map((item, index) => {
-                                    const { order, thirdParty } = item;
-                                    const orderDate = order.createdAt ? new Date(order.createdAt).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: '2-digit' }) : 'N/A';
-                                    const products = order.items || [];
-                                    const displayProducts = products.slice(0, 2);
-                                    const remainingCount = products.length - displayProducts.length;
+                                return currentData.map((tp, index) => {
+                                    // Determine if fully paid or has any unpaid orders
+                                    const isPaid = tp.pendingAmount <= 0;
 
                                     return (
                                         <tr
-                                            key={`${order.oid}-${thirdParty.thirdPartyId}-${index}`}
+                                            key={`${tp.thirdPartyId}-${index}`}
                                             className={`border-b border-[#D0E0DB] hover:bg-[#F0F4F3] transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-[#F0F4F3]/30'}`}
                                         >
                                             <td className="px-6 py-4">
                                                 <div className="flex items-center gap-3">
                                                     <div className="w-10 h-10 rounded-full bg-[#B8F4D8] flex items-center justify-center text-[#0D5C4D] font-semibold text-sm">
-                                                        {order.customer_name?.substring(0, 2).toUpperCase() || 'OR'}
+                                                        {tp.thirdPartyName?.substring(0, 2).toUpperCase() || 'TP'}
                                                     </div>
-                                                    <span className="text-sm font-semibold text-[#0D5C4D]">{order.oid}</span>
+                                                    <div>
+                                                        <div className="text-sm text-[#0D5C4D] font-semibold">{tp.thirdPartyName}</div>
+                                                        <div className="text-xs text-[#6B8782]">ID: {tp.thirdPartyId}</div>
+                                                    </div>
                                                 </div>
                                             </td>
 
                                             <td className="px-6 py-4">
-                                                <div className="text-sm text-[#0D5C4D] font-semibold">{thirdParty.thirdPartyName}</div>
-                                                <div className="text-xs text-[#6B8782]">ID: {thirdParty.thirdPartyId}</div>
+                                                <div className="text-sm font-semibold text-[#0D5C4D]">₹{tp.totalAmount.toLocaleString()}</div>
+                                                <div className="text-xs text-[#6B8782]">{tp.orderCount} order{tp.orderCount !== 1 ? 's' : ''}</div>
                                             </td>
 
                                             <td className="px-6 py-4">
-                                                <div className="flex flex-wrap gap-1.5">
-                                                    {displayProducts.map((product, idx) => (
-                                                        <span
-                                                            key={idx}
-                                                            className="px-3 py-1.5 rounded-full text-xs font-medium bg-[#D4F4E8] text-[#047857]"
-                                                        >
-                                                            {product.product_name || product.product}
-                                                        </span>
-                                                    ))}
-                                                    {remainingCount > 0 && (
-                                                        <span className="px-3 py-1.5 rounded-full text-xs font-medium bg-[#D4E8FF] text-[#0066CC]">
-                                                            +{remainingCount} more
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </td>
-
-                                            <td className="px-6 py-4">
-                                                <div className="text-sm text-[#0D5C4D]">{orderDate}</div>
-                                            </td>
-
-                                            <td className="px-6 py-4">
-                                                <div className="text-sm font-semibold text-[#0D5C4D]">₹{thirdParty.amount.toLocaleString()}</div>
-                                            </td>
-
-                                            <td className="px-6 py-4">
-                                                <span className={`px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1 w-fit ${order.payment_status === 'paid' || order.payment_status === 'completed'
+                                                <span className={`px-3 py-1.5 rounded-full text-xs font-medium flex items-center gap-1 w-fit ${isPaid
                                                     ? 'bg-[#4ED39A] text-white'
                                                     : 'bg-[#FFE0E0] text-[#CC0000]'
                                                     }`}>
-                                                    <div className={`w-2 h-2 rounded-full ${order.payment_status === 'paid' || order.payment_status === 'completed'
+                                                    <div className={`w-2 h-2 rounded-full ${isPaid
                                                         ? 'bg-white'
                                                         : 'bg-[#CC0000]'
                                                         }`}></div>
-                                                    {order.payment_status === 'paid' || order.payment_status === 'completed' ? 'Paid' : 'Unpaid'}
+                                                    {isPaid ? 'Fully Paid' : 'Unpaid'}
                                                 </span>
                                             </td>
 
                                             <td className="px-6 py-4">
                                                 <div className="flex gap-2">
                                                     <button
-                                                        onClick={() => navigate(`/third-party/${thirdParty.thirdPartyId}/orders/${order.oid}`)}
+                                                        onClick={() => navigate(`/admin/report-third-party/${tp.thirdPartyId}`)}
                                                         className="px-4 py-2 bg-[#0D8568] hover:bg-[#0a6354] text-white font-semibold rounded-lg text-xs transition-colors"
                                                     >
-                                                        View
+                                                        View Order
                                                     </button>
                                                     <button
-                                                        onClick={() => handleExportThirdParty(thirdParty.thirdPartyId, thirdParty.thirdPartyName)}
+                                                        onClick={() => handleExportThirdParty(tp.thirdPartyId, tp.thirdPartyName)}
                                                         className="px-4 py-2 bg-[#1DB890] hover:bg-[#19a57e] text-white font-semibold rounded-lg text-xs transition-colors"
                                                     >
                                                         Export
@@ -638,16 +731,8 @@ const ReportThirdParty = () => {
                 <div className="flex items-center justify-between px-6 py-4 bg-[#F0F4F3] border-t border-[#D0E0DB]">
                     <div className="text-sm text-[#6B8782]">
                         {(() => {
-                            // Flatten the data to count total items
-                            const flattenedData = [];
-                            orderHistoryData.forEach(({ order, thirdPartyData }) => {
-                                thirdPartyData.forEach(thirdParty => {
-                                    flattenedData.push({ order, thirdParty });
-                                });
-                            });
-
                             const itemsPerPage = 7;
-                            const totalItems = flattenedData.length;
+                            const totalItems = filteredData.length;
                             const startItem = totalItems === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1;
                             const endItem = Math.min(currentPage * itemsPerPage, totalItems);
                             return `Showing ${startItem}-${endItem} of ${totalItems} entries`;
@@ -655,16 +740,8 @@ const ReportThirdParty = () => {
                     </div>
                     <div className="flex items-center gap-2">
                         {(() => {
-                            // Flatten the data for pagination
-                            const flattenedData = [];
-                            orderHistoryData.forEach(({ order, thirdPartyData }) => {
-                                thirdPartyData.forEach(thirdParty => {
-                                    flattenedData.push({ order, thirdParty });
-                                });
-                            });
-
                             const itemsPerPage = 7;
-                            const totalPages = Math.ceil(flattenedData.length / itemsPerPage);
+                            const totalPages = Math.ceil(filteredData.length / itemsPerPage);
 
                             return (
                                 <>

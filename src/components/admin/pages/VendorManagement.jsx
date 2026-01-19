@@ -18,6 +18,8 @@ const VendorDashboard = () => {
   const [allProducts, setAllProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 7;
 
   // Fetch vendors and products from API
   useEffect(() => {
@@ -402,6 +404,11 @@ const VendorDashboard = () => {
     );
   }
 
+  // Pagination calculations
+  const totalPages = Math.ceil(filteredVendors.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const paginatedVendors = filteredVendors.slice(startIndex, startIndex + itemsPerPage);
+
   return (
     <div className="p-4 sm:p-6 lg:p-8">
       {/* Header with Add Button */}
@@ -472,7 +479,7 @@ const VendorDashboard = () => {
               </tr>
             </thead>
             <tbody>
-              {filteredVendors.map((vendor, index) => (
+              {paginatedVendors.map((vendor, index) => (
                 <tr
                   key={`${vendor.vendor_type}-${vendor.vendorId}`}
                   className={`border-b border-[#D0E0DB] hover:bg-[#F0F4F3] transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-[#F0F4F3]/30'
@@ -575,16 +582,54 @@ const VendorDashboard = () => {
         {/* Pagination */}
         <div className="flex items-center justify-between px-6 py-4 bg-[#F0F4F3] border-t border-[#D0E0DB]">
           <div className="text-sm text-[#6B8782]">
-            Showing {filteredVendors.length} of {totalCount} vendors
+            Showing {filteredVendors.length === 0 ? 0 : startIndex + 1} to {Math.min(startIndex + itemsPerPage, filteredVendors.length)} of {filteredVendors.length} vendors
           </div>
           <div className="flex items-center gap-2">
-            <button className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors">
+            <button
+              onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+              disabled={currentPage === 1}
+              className={`px-3 py-2 rounded-lg transition-colors ${currentPage === 1 ? 'text-gray-400 cursor-not-allowed' : 'text-[#6B8782] hover:bg-[#D0E0DB]'}`}
+            >
               &lt;
             </button>
-            <button className="px-4 py-2 rounded-lg font-medium transition-colors bg-[#0D8568] text-white">
-              1
-            </button>
-            <button className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors">
+
+            {[...Array(totalPages)].map((_, index) => {
+              const pageNumber = index + 1;
+              if (
+                pageNumber === 1 ||
+                pageNumber === totalPages ||
+                (pageNumber >= currentPage - 1 && pageNumber <= currentPage + 1)
+              ) {
+                return (
+                  <button
+                    key={pageNumber}
+                    onClick={() => setCurrentPage(pageNumber)}
+                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${currentPage === pageNumber
+                      ? 'bg-[#0D8568] text-white'
+                      : 'text-[#6B8782] hover:bg-[#D0E0DB]'
+                      }`}
+                  >
+                    {pageNumber}
+                  </button>
+                );
+              } else if (
+                pageNumber === currentPage - 2 ||
+                pageNumber === currentPage + 2
+              ) {
+                return (
+                  <span key={pageNumber} className="px-2 text-[#6B8782]">
+                    ...
+                  </span>
+                );
+              }
+              return null;
+            })}
+
+            <button
+              onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+              disabled={currentPage === totalPages}
+              className={`px-3 py-2 rounded-lg transition-colors ${currentPage === totalPages ? 'text-gray-400 cursor-not-allowed' : 'text-[#6B8782] hover:bg-[#D0E0DB]'}`}
+            >
               &gt;
             </button>
           </div>

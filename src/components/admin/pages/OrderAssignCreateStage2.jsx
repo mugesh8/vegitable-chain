@@ -8,6 +8,8 @@ import { getAllFarmers } from '../../../api/farmerApi';
 import { getAllSuppliers } from '../../../api/supplierApi';
 import { getAllThirdParties } from '../../../api/thirdPartyApi';
 import { getTapes } from '../../../api/inventoryApi';
+import { getAllLabourExcessPay } from '../../../api/labourExcessPayApi';
+import { getAllLabourRates } from '../../../api/labourRateApi';
 
 const OrderAssignCreateStage2 = () => {
   const navigate = useNavigate();
@@ -21,6 +23,10 @@ const OrderAssignCreateStage2 = () => {
   const [tapes, setTapes] = useState([]);
   const [openDropdown, setOpenDropdown] = useState(null);
   const [isBoxBasedOrder, setIsBoxBasedOrder] = useState(false);
+  const [labourWages, setLabourWages] = useState({});
+  const [labourExcessPay, setLabourExcessPay] = useState({});
+  const [labourTotalAmounts, setLabourTotalAmounts] = useState({});
+  const [labourRates, setLabourRates] = useState({});
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -39,15 +45,31 @@ const OrderAssignCreateStage2 = () => {
       try {
         // Fetch available stock and tapes
         try {
-          const [stockResponse, tapesResponse] = await Promise.all([
+          const [stockResponse, tapesResponse, excessPayResponse, labourRatesResponse] = await Promise.all([
             getAvailableStock(),
-            getTapes()
+            getTapes(),
+            getAllLabourExcessPay(),
+            getAllLabourRates()
           ]);
           if (stockResponse.success) {
             setAvailableStock(stockResponse.data);
           }
           if (tapesResponse.success) {
             setTapes(tapesResponse.data || []);
+          }
+          if (excessPayResponse.success) {
+            const excessPayMap = {};
+            excessPayResponse.data.forEach(pay => {
+              excessPayMap[pay.labour_id] = pay.amount;
+            });
+            setLabourExcessPay(excessPayMap);
+          }
+          if (labourRatesResponse.success) {
+            const ratesMap = {};
+            labourRatesResponse.data.forEach(rate => {
+              ratesMap[rate.labourType] = rate.amount;
+            });
+            setLabourRates(ratesMap);
           }
         } catch (error) {
           console.error('Error fetching data:', error);
@@ -107,6 +129,18 @@ const OrderAssignCreateStage2 = () => {
           }
 
           setLabours(presentLabours);
+          
+          // Initialize labour wages and total amounts
+          const wages = {};
+          const totals = {};
+          presentLabours.forEach(labour => {
+            const workType = labour.work_type || 'Normal';
+            const rateAmount = labourRates[workType] || labour.daily_wage || 0;
+            wages[labour.full_name] = rateAmount;
+            totals[labour.full_name] = rateAmount;
+          });
+          setLabourWages(wages);
+          setLabourTotalAmounts(totals);
         } catch (err) {
           console.error('Error loading present labours:', err);
         }
@@ -462,8 +496,33 @@ const OrderAssignCreateStage2 = () => {
         };
       });
 
+      // Prepare labour prices data
+      const labourPrices = [];
+      const assignedLabours = new Set();
+      productRows.forEach(row => {
+        if (row.labour && Array.isArray(row.labour)) {
+          row.labour.forEach(labourName => assignedLabours.add(labourName));
+        }
+      });
+
+      Array.from(assignedLabours).forEach(labourName => {
+        const labour = labours.find(l => l.full_name === labourName);
+        const excessAmount = labour ? (parseFloat(labourExcessPay[labour.lid]) || 0) : 0;
+        const labourWage = parseFloat(labourWages[labourName]) || 0;
+        const totalAmount = parseFloat(labourTotalAmounts[labourName]) || (labourWage + excessAmount);
+        
+        labourPrices.push({
+          labourName: labourName,
+          labourId: labour?.lid || null,
+          labourWage: labourWage,
+          excessPay: excessAmount,
+          totalAmount: totalAmount
+        });
+      });
+
       const summaryData = {
         labourAssignments,
+        labourPrices,
         totalPicked: parseFloat(productRows.reduce((sum, r) => sum + (parseFloat(r.pickedQuantity) || 0), 0).toFixed(2)),
         totalWastage: parseFloat(productRows.reduce((sum, r) => sum + (parseFloat(r.wastage) || 0), 0).toFixed(2)),
         totalReuse: parseFloat(productRows.reduce((sum, r) => sum + (parseFloat(r.reuse) || 0), 0).toFixed(2)),
@@ -580,8 +639,6 @@ const OrderAssignCreateStage2 = () => {
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Packed Kgs</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Total Packing</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Reuse</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Select Tape</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Tape Quantity</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Assigned Labours</th>
               </tr>
             </thead>
@@ -722,58 +779,6 @@ const OrderAssignCreateStage2 = () => {
                             sameProductRows.forEach(r => {
                               const idx = productRows.findIndex(pr => pr.id === r.id);
                               updatedRows[idx].reuse = e.target.value;
-                            });
-                            setProductRows(updatedRows);
-                          }}
-                          className="w-32 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
-                        />
-                      </td>
-                    )}
-                    {row.isFirstVendor && (
-                      <td className="px-4 py-4" rowSpan={rowSpan}>
-                        <div className="relative" style={{ minWidth: '150px' }}>
-                          <input
-                            type="text"
-                            readOnly
-                            value={row.tapeColor || ''}
-                            placeholder="Select tape..."
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none bg-white cursor-pointer"
-                            onClick={() => document.getElementById(`tape-select-${firstVendorIndex}`).click()}
-                          />
-                          <select
-                            id={`tape-select-${firstVendorIndex}`}
-                            className="absolute inset-0 opacity-0 cursor-pointer"
-                            value={row.tapeColor}
-                            onChange={(e) => {
-                              const updatedRows = [...productRows];
-                              sameProductRows.forEach(r => {
-                                const idx = productRows.findIndex(pr => pr.id === r.id);
-                                updatedRows[idx].tapeColor = e.target.value;
-                              });
-                              setProductRows(updatedRows);
-                            }}
-                          >
-                            <option key="empty" value="">Select tape...</option>
-                            {tapes.map(tape => (
-                              <option key={tape.iid} value={tape.color}>
-                                {tape.color}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </td>
-                    )}
-                    {row.isFirstVendor && (
-                      <td className="px-4 py-4" rowSpan={rowSpan}>
-                        <input
-                          type="text"
-                          value={row.tapeQuantity || ''}
-                          placeholder="Enter quantity"
-                          onChange={(e) => {
-                            const updatedRows = [...productRows];
-                            sameProductRows.forEach(r => {
-                              const idx = productRows.findIndex(pr => pr.id === r.id);
-                              updatedRows[idx].tapeQuantity = e.target.value;
                             });
                             setProductRows(updatedRows);
                           }}
@@ -1009,39 +1014,6 @@ const OrderAssignCreateStage2 = () => {
                     <p className="text-xs font-semibold text-emerald-700 mb-3">Common for all vendors</p>
                     <div className="space-y-3">
                       <div>
-                        <label className="text-xs text-gray-500 block mb-1">Select Tape</label>
-                        <div className="relative">
-                          <input
-                            type="text"
-                            readOnly
-                            value={firstRow.tapeColor || ''}
-                            placeholder="Select tape..."
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white cursor-pointer"
-                            onClick={() => document.getElementById(`tape-select-mobile-${groupIndex}`).click()}
-                          />
-                          <select
-                            id={`tape-select-mobile-${groupIndex}`}
-                            className="absolute inset-0 opacity-0 cursor-pointer"
-                            value={firstRow.tapeColor}
-                            onChange={(e) => {
-                              const updatedRows = [...productRows];
-                              vendorRows.forEach(r => {
-                                const idx = productRows.findIndex(pr => pr.id === r.id);
-                                updatedRows[idx].tapeColor = e.target.value;
-                              });
-                              setProductRows(updatedRows);
-                            }}
-                          >
-                            <option key="empty" value="">Select tape...</option>
-                            {tapes.map(tape => (
-                              <option key={tape.iid} value={tape.color}>
-                                {tape.color}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-                      <div>
                         <label className="text-xs text-gray-500 block mb-1">Select Labour (Multiple)</label>
                         <div className="relative labour-dropdown">
                           <button
@@ -1101,6 +1073,7 @@ const OrderAssignCreateStage2 = () => {
 
       {/* Summary Section - Grouped by Labour */}
       {productRows.some(row => row.labour) && (
+        <>
         <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl shadow-sm p-6 mb-6 border-2 border-emerald-200">
           <div className="flex items-center gap-3 mb-4">
             <div className="p-2 bg-emerald-600 rounded-lg">
@@ -1151,7 +1124,6 @@ const OrderAssignCreateStage2 = () => {
                             <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase">Product</th>
                             <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase">Entity Type</th>
                             <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase">Entity Name</th>
-                            <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase">Tape Color</th>
                             <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase">Picked Boxes/Bags</th>
                             <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase">Picked Qty</th>
                             <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase">Wastage</th>
@@ -1180,9 +1152,6 @@ const OrderAssignCreateStage2 = () => {
                               </td>
                               <td className="px-4 py-3">
                                 <span className="text-sm text-gray-900">{row.entityName || '-'}</span>
-                              </td>
-                              <td className="px-4 py-3">
-                                <span className="text-sm text-gray-900">{row.tapeColor || '-'}</span>
                               </td>
                               <td className="px-4 py-3">
                                 <span className="text-sm font-semibold text-gray-900">{row.pickedBoxes || 0}</span>
@@ -1331,10 +1300,6 @@ const OrderAssignCreateStage2 = () => {
                               <span className="text-gray-600">Entity Name:</span>
                               <span className="text-gray-900">{row.entityName || '-'}</span>
                             </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Tape Color:</span>
-                              <span className="text-gray-900">{row.tapeColor || '-'}</span>
-                            </div>
                             <div className="flex justify-between pt-2 border-t border-gray-200">
                               <span className="text-gray-700">Picked:</span>
                               <span className="font-semibold text-gray-900">{row.pickedQuantity || 0} kg</span>
@@ -1456,6 +1421,7 @@ const OrderAssignCreateStage2 = () => {
 
 
         </div>
+        </>
       )}
 
       {/* Action Buttons */}

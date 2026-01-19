@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, FileDown, Download } from 'lucide-react';
+import { ArrowLeft, FileDown, Download, Eye } from 'lucide-react';
 import { getAllOrders } from '../../../api/orderApi';
 import { getOrderAssignment } from '../../../api/orderAssignmentApi';
 import { getAllDrivers } from '../../../api/driverApi';
@@ -15,7 +15,7 @@ const ReportOrder = () => {
   const [drivers, setDrivers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 6;
+  const itemsPerPage = 7;
 
   // Filter states
   const [fromDate, setFromDate] = useState('');
@@ -295,7 +295,7 @@ const ReportOrder = () => {
     const doc = new jsPDF();
     doc.setFontSize(16);
     doc.text('Orders Report', 105, 15, { align: 'center' });
-    
+
     const tableData = filteredOrders.map(order => {
       const orderTotal = order.items?.reduce((sum, item) => sum + (parseFloat(item.total_price) || 0), 0) || 0;
       const statusInfo = getAssignmentStatus(order.oid);
@@ -471,8 +471,109 @@ const ReportOrder = () => {
               { v: place, s: cellStyle }
             ]);
           });
-        } else {
-          data.push([{ v: 'No Stage 1 data available', s: cellStyle }]);
+        }
+
+        // ASSIGNMENT SUMMARY - Group by Driver
+        data.push([]);
+        data.push([{ v: 'Assignment Summary', s: { ...headerStyle, font: { bold: true, color: { rgb: "FFFFFF" }, sz: 12, name: "Calibri" } } }]);
+        data.push([{ v: 'Product collections grouped by driver', s: { ...cellStyle, font: { italic: true, sz: 9 } } }]);
+        data.push([]);
+
+        // Get driver assignments from Stage 3 or Stage 1
+        const stage3ForSummary = assignment.stage3_data;
+        let driverProductMap = {};
+
+        if (stage3ForSummary) {
+          let stage3Data = typeof stage3ForSummary === 'string' ? JSON.parse(stage3ForSummary) : stage3ForSummary;
+          let deliveryData = stage3Data.products || [];
+          const airportGroups = stage3Data.summaryData?.airportGroups || {};
+
+          deliveryData.forEach((item) => {
+            const product = item.product || item.productName || item.product_name || '-';
+            let driverName = '';
+
+            // Find driver from airportGroups
+            for (const [airportCode, airportData] of Object.entries(airportGroups)) {
+              const productInGroup = airportData.products?.find(p =>
+                (p.product || p.productName) === product
+              );
+              if (productInGroup) {
+                driverName = productInGroup.driver || '';
+                break;
+              }
+            }
+
+            if (!driverName && item.selectedDriver) {
+              const driverId = parseInt(item.selectedDriver);
+              const driver = drivers.find(d => d.did === driverId);
+              if (driver) {
+                driverName = driver.driver_name || driver.name || '';
+              }
+            }
+
+            if (!driverName) driverName = 'Unassigned';
+
+            if (!driverProductMap[driverName]) {
+              driverProductMap[driverName] = [];
+            }
+
+            const grossWeightStr = item.grossWeight || item.gross_weight || '0';
+            const grossWeight = parseFloat(grossWeightStr.toString().replace(/[^0-9.]/g, '')) || 0;
+
+            driverProductMap[driverName].push({
+              product: product,
+              labour: item.labour || item.labourNames || item.labour_names || '-',
+              weight: grossWeight,
+              boxes: parseInt(item.noOfPkgs || item.no_of_pkgs || 0)
+            });
+          });
+
+          // Output each driver section
+          let driverIdx = 1;
+          for (const [driverName, products] of Object.entries(driverProductMap)) {
+            // Driver header
+            const driverCode = `DRV-${order.oid}-${driverIdx.toString().padStart(4, '0')}`;
+            data.push([
+              {
+                v: `${driverName} - ${driverCode}`,
+                s: { ...driverHeaderStyle, font: { bold: true, color: { rgb: "FFFFFF" }, sz: 11, name: "Calibri" } }
+              },
+              { v: '', s: driverHeaderStyle },
+              { v: '', s: driverHeaderStyle },
+              { v: '', s: driverHeaderStyle }
+            ]);
+
+            data.push([
+              {
+                v: `${products.length} Collections`,
+                s: { ...driverHeaderStyle, font: { bold: false, color: { rgb: "FFFFFF" }, sz: 9, name: "Calibri" } }
+              },
+              { v: '', s: driverHeaderStyle },
+              { v: '', s: driverHeaderStyle },
+              { v: '', s: driverHeaderStyle }
+            ]);
+
+            // Column headers
+            data.push([
+              { v: 'Product', s: headerStyle },
+              { v: 'Labour Assigned', s: headerStyle },
+              { v: 'Weight (kg)', s: headerStyle },
+              { v: 'Boxes/Bags', s: headerStyle }
+            ]);
+
+            // Products
+            products.forEach(p => {
+              data.push([
+                { v: p.product, s: cellStyle },
+                { v: p.labour, s: cellStyle },
+                { v: p.weight.toFixed(2), s: cellStyle },
+                { v: p.boxes, s: cellStyle }
+              ]);
+            });
+
+            data.push([]);
+            driverIdx++;
+          }
         }
       } else {
         data.push([{ v: 'No Stage 1 data available', s: cellStyle }]);
@@ -515,43 +616,38 @@ const ReportOrder = () => {
         data.push([]);
       }
 
-      // STAGE 3: DELIVERY ROUTES
+      // STAGE 3: DELIVERY ROUTES (Airport Delivery Summary)
       const stage3Source = assignment.stage3_data;
       if (stage3Source) {
-        data.push([{ v: 'STAGE 3: DELIVERY ROUTES', s: headerStyle }]);
+        data.push([{ v: 'STAGE 3: Airport Delivery Summary', s: headerStyle }]);
+        data.push([{ v: 'Products grouped by assigned driver', s: { ...cellStyle, font: { italic: true, sz: 9 } } }]);
+        data.push([]);
 
         let stage3Data = typeof stage3Source === 'string' ? JSON.parse(stage3Source) : stage3Source;
+
+        // Load Stage 4 pricing data
+        const stage4Source = assignment.stage4_data;
+        let stage4ProductRows = [];
+        if (stage4Source) {
+          let stage4Data = typeof stage4Source === 'string' ? JSON.parse(stage4Source) : stage4Source;
+          stage4ProductRows = stage4Data.reviewData?.productRows || stage4Data.productRows || [];
+        }
 
         // Stage3 saves as: { products: [...], summaryData: {...} }
         let deliveryData = stage3Data.products || [];
         let driverAssignments = stage3Data.summaryData?.driverAssignments || [];
+        const airportGroups = stage3Data.summaryData?.airportGroups || {};
 
         if (deliveryData && deliveryData.length > 0) {
-          data.push([
-            { v: 'Driver Name', s: headerStyle },
-            { v: 'Product', s: headerStyle },
-            { v: 'Gross Weight (kg)', s: headerStyle },
-            { v: 'Labour Assigned', s: headerStyle },
-            { v: 'CT', s: headerStyle },
-            { v: 'No of Pkgs', s: headerStyle },
-            { v: 'Airport Name', s: headerStyle },
-            { v: 'Airport Location', s: headerStyle }
-          ]);
+          // Group products by driver
+          const productsByDriver = {};
 
-          deliveryData.forEach((item, index) => {
+          deliveryData.forEach((item) => {
             const product = item.product || item.productName || item.product_name || '-';
-
-            if (index === 0) {
-              console.log('=== STAGE 3 DRIVER DEBUG ===');
-              console.log('First item:', item);
-              console.log('Product:', product);
-              console.log('stage3Data.summaryData:', stage3Data.summaryData);
-              console.log('stage3Data.summaryData?.airportGroups:', stage3Data.summaryData?.airportGroups);
-            }
 
             // Find driver from airportGroups by matching product
             let driverName = '';
-            const airportGroups = stage3Data.summaryData?.airportGroups || {};
+            let driverInfo = null;
 
             // Search through all airport groups to find the product and its driver
             for (const [airportCode, airportData] of Object.entries(airportGroups)) {
@@ -560,11 +656,7 @@ const ReportOrder = () => {
               );
               if (productInGroup) {
                 driverName = productInGroup.driver || '';
-                if (index === 0) {
-                  console.log('Found product in airportGroup:', airportCode);
-                  console.log('Product data:', productInGroup);
-                  console.log('Driver name:', driverName);
-                }
+                driverInfo = { airportCode, airportData };
                 break;
               }
             }
@@ -584,63 +676,190 @@ const ReportOrder = () => {
             // If still no driver name, use selectedDriver ID to look up from drivers list
             if (!driverName && item.selectedDriver) {
               const driverId = parseInt(item.selectedDriver);
-
-              if (index === 0) {
-                console.log('=== DRIVER LOOKUP DEBUG ===');
-                console.log('drivers array:', drivers);
-                console.log('drivers length:', drivers.length);
-                console.log('selectedDriver:', item.selectedDriver);
-                console.log('driverId (parsed):', driverId);
-                if (drivers.length > 0) {
-                  console.log('First driver:', drivers[0]);
-                  console.log('First driver.did:', drivers[0].did);
-                  console.log('First driver.driver_name:', drivers[0].driver_name);
-                }
-              }
-
               const driver = drivers.find(d => d.did === driverId);
-
-              if (index === 0) {
-                console.log('Found driver:', driver);
-              }
-
               if (driver) {
                 driverName = driver.driver_name || driver.name || '';
-                if (index === 0) {
-                  console.log('Driver name:', driverName);
-                }
               } else {
                 driverName = `Driver Not Found (ID: ${item.selectedDriver})`;
-                if (index === 0) {
-                  console.log('Driver not found in drivers list, using ID:', item.selectedDriver);
-                  console.log('Available driver IDs:', drivers.map(d => d.did));
-                }
               }
             }
 
-            if (index === 0 && !driverName) {
-              console.log('No driver found for product:', product);
+            if (!driverName) {
+              driverName = 'Unassigned';
+            }
+
+            // Initialize driver group if not exists
+            if (!productsByDriver[driverName]) {
+              productsByDriver[driverName] = {
+                products: [],
+                totalPackages: 0,
+                totalWeight: 0,
+                totalAmount: 0,
+                driverInfo: driverInfo
+              };
             }
 
             const grossWeightStr = item.grossWeight || item.gross_weight || '0';
             const grossWeight = parseFloat(grossWeightStr.toString().replace(/[^0-9.]/g, '')) || 0;
-            const labour = item.labour || item.labourNames || item.labour_names || '-';
-            const ct = item.ct || '-';
-            const noOfPkgs = item.noOfPkgs || item.no_of_pkgs || 0;
-            const airportName = item.airportName || item.airport_name || '-';
-            const airportLocation = item.airportLocation || item.airport_location || '-';
+            const noOfPkgs = parseInt(item.noOfPkgs || item.no_of_pkgs || 0);
 
-            data.push([
-              { v: driverName || '-', s: cellStyle },
-              { v: product, s: cellStyle },
-              { v: grossWeight.toFixed(2), s: cellStyle },
-              { v: labour, s: cellStyle },
-              { v: ct, s: cellStyle },
-              { v: noOfPkgs, s: cellStyle },
-              { v: airportName, s: cellStyle },
-              { v: airportLocation, s: cellStyle }
-            ]);
+            // Get pricing from Stage 4
+            const stage4Product = stage4ProductRows.find(p4 =>
+              (p4.product_name || p4.product || p4.productName) === product
+            );
+            const pricePerKg = stage4Product ? parseFloat(stage4Product.price || stage4Product.final_price || 0) : 0;
+            // Use net_weight from Stage 4 for accurate amount calculation (matches Stage 4 total)
+            const netWeight = stage4Product ? parseFloat(stage4Product.net_weight || stage4Product.quantity || 0) : grossWeight;
+            const productTotal = pricePerKg * netWeight;
+
+            productsByDriver[driverName].products.push({
+              product: product,
+              grossWeight: grossWeight,
+              labour: item.labour || item.labourNames || item.labour_names || '-',
+              ct: item.ct || '-',
+              noOfPkgs: noOfPkgs,
+              airportName: item.airportName || item.airport_name || '-',
+              airportLocation: item.airportLocation || item.airport_location || '-',
+              pricePerKg: pricePerKg,
+              productTotal: productTotal,
+              netWeight: netWeight
+            });
+
+            productsByDriver[driverName].totalPackages += noOfPkgs;
+            productsByDriver[driverName].totalWeight += grossWeight;
+            productsByDriver[driverName].totalAmount += productTotal;
           });
+
+          // Create driver section style
+          const driverHeaderStyle = {
+            fill: { fgColor: { rgb: "10B981" } },
+            font: { bold: true, color: { rgb: "FFFFFF" }, sz: 11, name: "Calibri" },
+            alignment: { horizontal: "left", vertical: "center" },
+            border: {
+              top: { style: "thin", color: { rgb: "000000" } },
+              bottom: { style: "thin", color: { rgb: "000000" } },
+              left: { style: "thin", color: { rgb: "000000" } },
+              right: { style: "thin", color: { rgb: "000000" } }
+            }
+          };
+
+          const driverTotalStyle = {
+            fill: { fgColor: { rgb: "D1FAE5" } },
+            font: { bold: true, sz: 10, name: "Calibri" },
+            alignment: { horizontal: "center", vertical: "center" },
+            border: {
+              top: { style: "thin", color: { rgb: "000000" } },
+              bottom: { style: "thin", color: { rgb: "000000" } },
+              left: { style: "thin", color: { rgb: "000000" } },
+              right: { style: "thin", color: { rgb: "000000" } }
+            }
+          };
+
+          // Output each driver section
+          let driverIndex = 1;
+          for (const [driverName, driverData] of Object.entries(productsByDriver)) {
+            // Get the GVT order code and extract short format (e.g., GVT003 from GVT_12-01-003)
+            const fullOrderId = assignment.order_auto_id || order.order_auto_id || `ORD-${order.oid}`;
+            let gvtCode = fullOrderId;
+
+            // Extract GVT code: handle various formats (GVT13-01-2026 -> GVT2026)
+            if (fullOrderId.startsWith('GVT')) {
+              // Extract all numbers from the string
+              const numbers = fullOrderId.match(/\d+/g);
+              if (numbers && numbers.length > 0) {
+                // Get the FIRST number (which is the order sequence, not the year)
+                const firstNumber = numbers[0];
+                // Pad to 3 digits
+                const paddedNumber = driverIndex.toString().padStart(3, '0');
+                gvtCode = `GVT${paddedNumber}`;
+              }
+            }
+
+            // Driver header with GVT code prominently displayed
+            data.push([
+              {
+                v: `${driverIndex}`,
+                s: driverHeaderStyle
+              },
+              {
+                v: `${gvtCode}`,
+                s: { ...driverHeaderStyle, font: { bold: true, color: { rgb: "FFFFFF" }, sz: 12, name: "Calibri" } }
+              },
+              { v: '', s: driverHeaderStyle },
+              { v: '', s: driverHeaderStyle },
+              { v: '', s: driverHeaderStyle },
+              { v: '', s: driverHeaderStyle },
+              { v: '', s: driverHeaderStyle },
+              { v: '', s: driverHeaderStyle },
+              { v: '', s: driverHeaderStyle },
+              { v: '', s: driverHeaderStyle }
+            ]);
+
+            // Second row with product count and driver name
+            data.push([
+              {
+                v: `${driverData.products.length} Products • ${driverName}`,
+                s: { ...driverHeaderStyle, font: { bold: false, color: { rgb: "FFFFFF" }, sz: 10, name: "Calibri" } }
+              },
+              { v: '', s: driverHeaderStyle },
+              { v: '', s: driverHeaderStyle },
+              { v: '', s: driverHeaderStyle },
+              { v: '', s: driverHeaderStyle },
+              { v: '', s: driverHeaderStyle },
+              { v: '', s: driverHeaderStyle },
+              { v: '', s: driverHeaderStyle },
+              { v: '', s: driverHeaderStyle },
+              { v: '', s: driverHeaderStyle }
+            ]);
+
+            // Column headers for this driver's products
+            data.push([
+              { v: 'Product', s: headerStyle },
+              { v: 'Gross Weight (kg)', s: headerStyle },
+              { v: 'Labour Assigned', s: headerStyle },
+              { v: 'CT', s: headerStyle },
+              { v: 'No of Pkgs', s: headerStyle },
+              { v: 'Price/kg (₹)', s: headerStyle },
+              { v: 'Amount (₹)', s: headerStyle },
+              { v: 'Airport Name', s: headerStyle },
+              { v: 'Airport Location', s: headerStyle },
+              { v: 'Status', s: headerStyle }
+            ]);
+
+            // Products for this driver
+            driverData.products.forEach(productItem => {
+              data.push([
+                { v: productItem.product, s: cellStyle },
+                { v: productItem.grossWeight.toFixed(2), s: cellStyle },
+                { v: productItem.labour, s: cellStyle },
+                { v: productItem.ct, s: cellStyle },
+                { v: productItem.noOfPkgs, s: cellStyle },
+                { v: productItem.pricePerKg.toFixed(2), s: cellStyle },
+                { v: productItem.productTotal.toFixed(2), s: cellStyle },
+                { v: productItem.airportName, s: cellStyle },
+                { v: productItem.airportLocation, s: cellStyle },
+                { v: 'Pending', s: cellStyle }
+              ]);
+            });
+
+            // Driver totals
+            data.push([
+              { v: 'Driver Total:', s: driverTotalStyle },
+              { v: `${driverData.totalWeight.toFixed(2)} kg`, s: driverTotalStyle },
+              { v: '', s: driverTotalStyle },
+              { v: '', s: driverTotalStyle },
+              { v: `${driverData.totalPackages} pkgs`, s: driverTotalStyle },
+              { v: '', s: driverTotalStyle },
+              { v: `₹${driverData.totalAmount.toFixed(2)}`, s: driverTotalStyle },
+              { v: '', s: driverTotalStyle },
+              { v: '', s: driverTotalStyle },
+              { v: '', s: driverTotalStyle }
+            ]);
+
+            // Empty row between drivers
+            data.push([]);
+            driverIndex++;
+          }
         } else {
           data.push([{ v: 'No Stage 3 data available', s: cellStyle }]);
         }
@@ -889,6 +1108,129 @@ const ReportOrder = () => {
 
           yPos = doc.lastAutoTable.finalY + 10;
         }
+
+        // ASSIGNMENT SUMMARY - Group by Driver
+        const stage3ForPdfSummary = assignment.stage3_data;
+        let driverProductMapPdf = {};
+
+        if (stage3ForPdfSummary) {
+          let stage3DataPdf = typeof stage3ForPdfSummary === 'string' ? JSON.parse(stage3ForPdfSummary) : stage3ForPdfSummary;
+          let deliveryDataPdf = stage3DataPdf.products || [];
+          const airportGroupsPdf = stage3DataPdf.summaryData?.airportGroups || {};
+
+          deliveryDataPdf.forEach((item) => {
+            const product = item.product || item.productName || item.product_name || '-';
+            let driverName = '';
+
+            // Find driver from airportGroups
+            for (const [airportCode, airportData] of Object.entries(airportGroupsPdf)) {
+              const productInGroup = airportData.products?.find(p =>
+                (p.product || p.productName) === product
+              );
+              if (productInGroup) {
+                driverName = productInGroup.driver || '';
+                break;
+              }
+            }
+
+            if (!driverName && item.selectedDriver) {
+              const driverId = parseInt(item.selectedDriver);
+              const driver = drivers.find(d => d.did === driverId);
+              if (driver) {
+                driverName = driver.driver_name || driver.name || '';
+              }
+            }
+
+            if (!driverName) driverName = 'Unassigned';
+
+            if (!driverProductMapPdf[driverName]) {
+              driverProductMapPdf[driverName] = [];
+            }
+
+            const grossWeightStr = item.grossWeight || item.gross_weight || '0';
+            const grossWeight = parseFloat(grossWeightStr.toString().replace(/[^0-9.]/g, '')) || 0;
+
+            driverProductMapPdf[driverName].push({
+              product: product,
+              labour: item.labour || item.labourNames || item.labour_names || '-',
+              weight: grossWeight,
+              boxes: parseInt(item.noOfPkgs || item.no_of_pkgs || 0)
+            });
+          });
+
+          // Output Assignment Summary
+          if (Object.keys(driverProductMapPdf).length > 0) {
+            if (yPos > 250) {
+              doc.addPage();
+              yPos = 20;
+            }
+
+            doc.setFontSize(12);
+            doc.setFont(undefined, 'bold');
+            doc.text('Assignment Summary', 14, yPos);
+            yPos += 5;
+            doc.setFontSize(9);
+            doc.setFont(undefined, 'italic');
+            doc.text('Product collections grouped by driver', 14, yPos);
+            yPos += 10;
+
+            // Output each driver section
+            let driverIdxPdf = 1;
+            for (const [driverName, products] of Object.entries(driverProductMapPdf)) {
+              if (yPos > 220) {
+                doc.addPage();
+                yPos = 20;
+              }
+
+              // Driver header
+              const driverCodePdf = `DRV-${order.oid}-${driverIdxPdf.toString().padStart(4, '0')}`;
+              doc.setFontSize(11);
+              doc.setFont(undefined, 'bold');
+              doc.setFillColor(16, 185, 129);
+              doc.setTextColor(255, 255, 255);
+              doc.rect(14, yPos - 5, 182, 8, 'F');
+              doc.text(`${driverName} - ${driverCodePdf}`, 16, yPos);
+              doc.setTextColor(0, 0, 0);
+              yPos += 8;
+
+              doc.setFontSize(9);
+              doc.setFont(undefined, 'normal');
+              doc.setFillColor(16, 185, 129);
+              doc.setTextColor(255, 255, 255);
+              doc.rect(14, yPos - 5, 182, 6, 'F');
+              doc.text(`${products.length} Collections`, 16, yPos);
+              doc.setTextColor(0, 0, 0);
+              yPos += 6;
+
+              // Products table
+              const driverProductsBodyPdf = products.map(p => [
+                cleanProductName(p.product),
+                p.labour,
+                p.weight.toFixed(2),
+                p.boxes
+              ]);
+
+              doc.autoTable({
+                startY: yPos,
+                head: [['Product', 'Labour Assigned', 'Weight (kg)', 'Boxes/Bags']],
+                body: driverProductsBodyPdf,
+                theme: 'grid',
+                headStyles: { fillColor: [68, 114, 196], textColor: 255, fontStyle: 'bold', fontSize: 8, halign: 'center' },
+                bodyStyles: { fontSize: 7, halign: 'center' },
+                columnStyles: {
+                  0: { cellWidth: 60 },
+                  1: { cellWidth: 50 },
+                  2: { cellWidth: 30 },
+                  3: { cellWidth: 35 }
+                },
+                margin: { left: 14, right: 14 }
+              });
+
+              yPos = doc.lastAutoTable.finalY + 8;
+              driverIdxPdf++;
+            }
+          }
+        }
       }
 
       // STAGE 2: PACKAGING & QUALITY
@@ -938,12 +1280,13 @@ const ReportOrder = () => {
         }
       }
 
-      // STAGE 3: DELIVERY ROUTES
+      // STAGE 3: DELIVERY ROUTES (Airport Delivery Summary)
       const stage3Source = assignment.stage3_data;
       if (stage3Source) {
         let stage3Data = typeof stage3Source === 'string' ? JSON.parse(stage3Source) : stage3Source;
         let deliveryData = stage3Data.products || [];
         let driverAssignments = stage3Data.summaryData?.driverAssignments || [];
+        const airportGroups = stage3Data.summaryData?.airportGroups || {};
 
         if (deliveryData && deliveryData.length > 0) {
           if (yPos > 250) {
@@ -951,17 +1294,31 @@ const ReportOrder = () => {
             yPos = 20;
           }
 
-          doc.setFontSize(12);
+          doc.setFontSize(14);
           doc.setFont(undefined, 'bold');
-          doc.text('Stage 3: Delivery Routes', 14, yPos);
+          doc.text('Stage 3: Airport Delivery Summary', 14, yPos);
           yPos += 5;
+          doc.setFontSize(9);
+          doc.setFont(undefined, 'italic');
+          doc.text('Products grouped by assigned driver', 14, yPos);
+          yPos += 10;
 
-          const stage3Body = deliveryData.map(item => {
+          // Load Stage 4 pricing data
+          const stage4SourcePdf = assignment.stage4_data;
+          let stage4ProductRowsPdf = [];
+          if (stage4SourcePdf) {
+            let stage4DataPdf = typeof stage4SourcePdf === 'string' ? JSON.parse(stage4SourcePdf) : stage4SourcePdf;
+            stage4ProductRowsPdf = stage4DataPdf.reviewData?.productRows || stage4DataPdf.productRows || [];
+          }
+
+          // Group products by driver
+          const productsByDriver = {};
+
+          deliveryData.forEach((item) => {
             const product = item.product || item.productName || item.product_name || '-';
 
             // Find driver from airportGroups by matching product
             let driverName = '';
-            const airportGroups = stage3Data.summaryData?.airportGroups || {};
 
             // Search through all airport groups to find the product and its driver
             for (const [airportCode, airportData] of Object.entries(airportGroups)) {
@@ -997,47 +1354,153 @@ const ReportOrder = () => {
               }
             }
 
+            if (!driverName) {
+              driverName = 'Unassigned';
+            }
+
+            // Initialize driver group if not exists
+            if (!productsByDriver[driverName]) {
+              productsByDriver[driverName] = {
+                products: [],
+                totalPackages: 0,
+                totalWeight: 0,
+                totalAmount: 0
+              };
+            }
+
             const grossWeightStr = item.grossWeight || item.gross_weight || '0';
             const grossWeight = parseFloat(grossWeightStr.toString().replace(/[^0-9.]/g, '')) || 0;
-            const labour = item.labour || item.labourNames || item.labour_names || '-';
-            const ct = item.ct || '-';
-            const noOfPkgs = item.noOfPkgs || item.no_of_pkgs || 0;
-            const airportName = item.airportName || item.airport_name || '-';
-            const airportLocation = item.airportLocation || item.airport_location || '-';
+            const noOfPkgs = parseInt(item.noOfPkgs || item.no_of_pkgs || 0);
 
-            return [
-              driverName || '-',
-              cleanProductName(product),
-              grossWeight.toFixed(2),
-              labour,
-              ct,
-              noOfPkgs,
-              airportName,
-              airportLocation
-            ];
+            // Get pricing from Stage 4
+            const stage4ProductPdf = stage4ProductRowsPdf.find(p4 =>
+              (p4.product_name || p4.product || p4.productName) === product
+            );
+            const pricePerKgPdf = stage4ProductPdf ? parseFloat(stage4ProductPdf.price || stage4ProductPdf.final_price || 0) : 0;
+            // Use net_weight from Stage 4 for accurate amount calculation (matches Stage 4 total)
+            const netWeightPdf = stage4ProductPdf ? parseFloat(stage4ProductPdf.net_weight || stage4ProductPdf.quantity || 0) : grossWeight;
+            const productTotalPdf = pricePerKgPdf * netWeightPdf;
+
+            productsByDriver[driverName].products.push({
+              product: product,
+              grossWeight: grossWeight,
+              labour: item.labour || item.labourNames || item.labour_names || '-',
+              ct: item.ct || '-',
+              noOfPkgs: noOfPkgs,
+              airportName: item.airportName || item.airport_name || '-',
+              airportLocation: item.airportLocation || item.airport_location || '-',
+              pricePerKg: pricePerKgPdf,
+              productTotal: productTotalPdf,
+              netWeight: netWeightPdf
+            });
+
+            productsByDriver[driverName].totalPackages += noOfPkgs;
+            productsByDriver[driverName].totalWeight += grossWeight;
+            productsByDriver[driverName].totalAmount += productTotalPdf;
           });
 
-          doc.autoTable({
-            startY: yPos,
-            head: [['Driver', 'Product', 'Weight (kg)', 'Labour', 'CT', 'Pkgs', 'Airport', 'Location']],
-            body: stage3Body,
-            theme: 'grid',
-            headStyles: { fillColor: [68, 114, 196], textColor: 255, fontStyle: 'bold', fontSize: 8, halign: 'center' },
-            bodyStyles: { fontSize: 7, halign: 'center' },
-            columnStyles: {
-              0: { cellWidth: 25 },
-              1: { cellWidth: 35 },
-              2: { cellWidth: 18 },
-              3: { cellWidth: 25 },
-              4: { cellWidth: 15 },
-              5: { cellWidth: 15 },
-              6: { cellWidth: 30 },
-              7: { cellWidth: 22 }
-            },
-            margin: { left: 14, right: 14 }
-          });
+          // Output each driver section
+          let driverIndex = 1;
+          for (const [driverName, driverData] of Object.entries(productsByDriver)) {
+            // Check if we need a new page
+            if (yPos > 220) {
+              doc.addPage();
+              yPos = 20;
+            }
 
-          yPos = doc.lastAutoTable.finalY + 10;
+            // Get the GVT order code and extract short format (e.g., GVT003 from GVT_12-01-003)
+            const fullOrderId = assignment.order_auto_id || order.order_auto_id || `ORD-${order.oid}`;
+            let gvtCode = fullOrderId;
+
+            // Extract GVT code: handle various formats (GVT13-01-2026 -> GVT2026)
+            if (fullOrderId.startsWith('GVT')) {
+              // Extract all numbers from the string
+              const numbers = fullOrderId.match(/\d+/g);
+              if (numbers && numbers.length > 0) {
+                // Get the FIRST number (which is the order sequence, not the year)
+                const firstNumber = numbers[0];
+                // Pad to 3 digits
+                const paddedNumber = driverIndex.toString().padStart(3, '0');
+                gvtCode = `GVT${paddedNumber}`;
+              }
+            }
+
+            // Driver header with GVT code
+            doc.setFontSize(12);
+            doc.setFont(undefined, 'bold');
+            doc.setFillColor(16, 185, 129); // Green color
+            doc.setTextColor(255, 255, 255); // White text
+            doc.rect(14, yPos - 5, 182, 10, 'F');
+            doc.text(`${driverIndex}`, 16, yPos);
+            doc.text(`${gvtCode}`, 105, yPos, { align: 'center' });
+            doc.setTextColor(0, 0, 0); // Reset to black
+            yPos += 10;
+
+            // Second row with product count and driver name
+            doc.setFontSize(9);
+            doc.setFont(undefined, 'normal');
+            doc.setFillColor(16, 185, 129); // Green color
+            doc.setTextColor(255, 255, 255); // White text
+            doc.rect(14, yPos - 5, 182, 7, 'F');
+            doc.text(`${driverData.products.length} Products • ${driverName}`, 16, yPos);
+            doc.setTextColor(0, 0, 0); // Reset to black
+            yPos += 7;
+
+            // Products table for this driver
+            const driverProductsBody = driverData.products.map(productItem => [
+              cleanProductName(productItem.product),
+              productItem.grossWeight.toFixed(2),
+              productItem.labour,
+              productItem.ct,
+              productItem.noOfPkgs,
+              productItem.pricePerKg.toFixed(2),
+              productItem.productTotal.toFixed(2),
+              productItem.airportName,
+              productItem.airportLocation,
+              'Pending'
+            ]);
+
+            // Add driver totals row
+            driverProductsBody.push([
+              { content: 'Driver Total:', styles: { fontStyle: 'bold', fillColor: [209, 250, 229] } },
+              { content: `${driverData.totalWeight.toFixed(2)} kg`, styles: { fontStyle: 'bold', fillColor: [209, 250, 229] } },
+              { content: '', styles: { fillColor: [209, 250, 229] } },
+              { content: '', styles: { fillColor: [209, 250, 229] } },
+              { content: `${driverData.totalPackages} pkgs`, styles: { fontStyle: 'bold', fillColor: [209, 250, 229] } },
+              { content: '', styles: { fillColor: [209, 250, 229] } },
+              { content: `₹${driverData.totalAmount.toFixed(2)}`, styles: { fontStyle: 'bold', fillColor: [209, 250, 229] } },
+              { content: '', styles: { fillColor: [209, 250, 229] } },
+              { content: '', styles: { fillColor: [209, 250, 229] } },
+              { content: '', styles: { fillColor: [209, 250, 229] } }
+            ]);
+
+            doc.autoTable({
+              startY: yPos,
+              head: [['Product', 'Weight\n(kg)', 'Labour', 'CT', 'Pkgs', 'Price/kg\n(₹)', 'Amount\n(₹)', 'Airport', 'Location', 'Status']],
+              body: driverProductsBody,
+              theme: 'grid',
+              headStyles: { fillColor: [68, 114, 196], textColor: 255, fontStyle: 'bold', fontSize: 7, halign: 'center', valign: 'middle' },
+              bodyStyles: { fontSize: 6, halign: 'center' },
+              columnStyles: {
+                0: { cellWidth: 28 },
+                1: { cellWidth: 15 },
+                2: { cellWidth: 20 },
+                3: { cellWidth: 10 },
+                4: { cellWidth: 10 },
+                5: { cellWidth: 15 },
+                6: { cellWidth: 18 },
+                7: { cellWidth: 25 },
+                8: { cellWidth: 20 },
+                9: { cellWidth: 14 }
+              },
+              margin: { left: 14, right: 14 }
+            });
+
+            yPos = doc.lastAutoTable.finalY + 8;
+            driverIndex++;
+          }
+
+          yPos += 2;
         }
       }
 
@@ -1224,6 +1687,13 @@ const ReportOrder = () => {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => navigate(`/admin/report-order/${order.oid}`)}
+                            className="p-2 bg-teal-100 text-teal-700 rounded-lg hover:bg-teal-200 transition-colors"
+                            title="View Details"
+                          >
+                            <Eye size={16} />
+                          </button>
                           <button
                             onClick={() => handleExportOrderExcel(order)}
                             className="p-2 bg-emerald-100 text-emerald-700 rounded-lg hover:bg-emerald-200 transition-colors"

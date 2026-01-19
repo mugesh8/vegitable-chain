@@ -103,7 +103,7 @@ const DriverLocalPickups = () => {
               transformedOrders.push({
                 id: `${order.oid}-${index}`,
                 orderId: order.oid,
-                type: 'Local Pickup',
+                type: 'LOCAL GRADE ORDER',
                 product: assignment.product,
                 entityType: assignment.entityType === 'farmer' ? 'Farmer' :
                   assignment.entityType === 'supplier' ? 'Supplier' :
@@ -384,25 +384,19 @@ const DriverLocalPickups = () => {
           <button
             className="px-6 py-2.5 rounded-lg font-medium transition-all text-sm whitespace-nowrap bg-[#0D7C66] text-white shadow-md"
           >
-            Local Pickups
+            LOCAL GRADE ORDER
           </button>
           <button
             onClick={() => navigate(`/drivers/${id}/airport`)}
             className="px-6 py-2.5 rounded-lg font-medium transition-all text-sm bg-white text-gray-600 hover:bg-gray-50 border border-gray-200 whitespace-nowrap"
           >
-            Line Airport
+            BOX ORDER
           </button>
           <button
             onClick={() => navigate('/fuel-expense-management')}
             className="px-6 py-2.5 rounded-lg font-medium transition-all text-sm bg-white text-gray-600 hover:bg-gray-50 border border-gray-200 whitespace-nowrap"
           >
             Fuel Expenses
-          </button>
-          <button
-            onClick={() => navigate('/excess-km-management')}
-            className="px-6 py-2.5 rounded-lg font-medium transition-all text-sm bg-white text-gray-600 hover:bg-gray-50 border border-gray-200 whitespace-nowrap"
-          >
-            Excess KM
           </button>
           <button
             onClick={() => navigate('/advance-pay-management')}

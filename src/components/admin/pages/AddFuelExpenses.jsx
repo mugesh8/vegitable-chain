@@ -3,19 +3,21 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
 import { createFuelExpense } from '../../../api/fuelExpenseApi';
 import { getDriverById, getAllDrivers } from '../../../api/driverApi';
+import { petrolBulkApi } from '../../../api/petrolBulkApi';
 
 const AddFuelExpenses = () => {
   const navigate = useNavigate();
   const { id } = useParams();
   const [driver, setDriver] = useState(null);
   const [vehicles, setVehicles] = useState([]);
+  const [petrolBunks, setPetrolBunks] = useState([]);
   const [loading, setLoading] = useState(false);
   const [expenseData, setExpenseData] = useState({
     date: new Date().toISOString().split('T')[0],
     driver_id: id,
     vehicle_number: '',
     fuel_type: 'Petrol',
-    petrol_bunk_name: 'Indian Oil Petroleum',
+    petrol_bunk_name: '',
     unit_price: '',
     litre: ''
   });
@@ -24,6 +26,7 @@ const AddFuelExpenses = () => {
     if (id) {
       fetchDriver();
       fetchVehicles();
+      fetchPetrolBunks();
     }
   }, [id]);
 
@@ -52,6 +55,17 @@ const AddFuelExpenses = () => {
     }
   };
 
+  const fetchPetrolBunks = async () => {
+    try {
+      const response = await petrolBulkApi.getAll(1, 100); // Get all petrol bunks
+      if (response.data && response.data.data) {
+        setPetrolBunks(response.data.data);
+      }
+    } catch (error) {
+      console.error('Error fetching petrol bunks:', error);
+    }
+  };
+
   const calculateTotal = () => {
     const total = (parseFloat(expenseData.unit_price) || 0) * (parseFloat(expenseData.litre) || 0);
     return total.toFixed(2);
@@ -60,11 +74,11 @@ const AddFuelExpenses = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!expenseData.date || !expenseData.driver_id || !expenseData.petrol_bunk_name || !expenseData.unit_price || !expenseData.litre) return;
-    
+
     try {
       setLoading(true);
       await createFuelExpense(expenseData);
-      navigate('/fuel-expense-management');
+      navigate('/fuel-expense-management', { state: { driverId: expenseData.driver_id } });
     } catch (error) {
       console.error('Error creating fuel expense:', error);
       alert('Failed to create fuel expense');
@@ -90,7 +104,7 @@ const AddFuelExpenses = () => {
         {/* Form */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 sm:p-8">
           <h1 className="text-2xl font-bold text-gray-900 mb-6">Add Fuel Expenses</h1>
-          
+
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Date</label>
@@ -144,14 +158,19 @@ const AddFuelExpenses = () => {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Petrol Bunk Name</label>
-              <input
-                type="text"
+              <select
                 value={expenseData.petrol_bunk_name}
                 onChange={(e) => setExpenseData({ ...expenseData, petrol_bunk_name: e.target.value })}
-                placeholder="Enter petrol bunk name"
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent"
                 required
-              />
+              >
+                <option value="">Select Petrol Bunk</option>
+                {petrolBunks.map((bunk) => (
+                  <option key={bunk.pbid || bunk.id} value={bunk.name}>
+                    {bunk.name}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div>

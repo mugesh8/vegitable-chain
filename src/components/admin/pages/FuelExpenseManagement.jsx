@@ -1,15 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { Plus, ArrowLeft, MoreVertical, Eye, Edit, Trash2 } from 'lucide-react';
-import { getAllFuelExpenses, deleteFuelExpense } from '../../../api/fuelExpenseApi';
+import { getAllFuelExpenses, getFuelExpensesByDriverId, deleteFuelExpense } from '../../../api/fuelExpenseApi';
+import { getAllDrivers } from '../../../api/driverApi';
 
 const FuelExpenseManagement = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedExpense, setSelectedExpense] = useState(null);
   const [openDropdown, setOpenDropdown] = useState(null);
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
   const [fuelExpenses, setFuelExpenses] = useState([]);
+  const [drivers, setDrivers] = useState([]);
+  const [selectedDriverId, setSelectedDriverId] = useState(location.state?.driverId || '');
   const [loading, setLoading] = useState(true);
   const dropdownRef = useRef(null);
 
@@ -24,16 +28,46 @@ const FuelExpenseManagement = () => {
   }, []);
 
   useEffect(() => {
-    fetchFuelExpenses();
+    fetchDrivers();
   }, []);
+
+  useEffect(() => {
+    fetchFuelExpenses();
+  }, [selectedDriverId]);
+
+  const fetchDrivers = async () => {
+    try {
+      const response = await getAllDrivers();
+      setDrivers(response.data || []);
+    } catch (error) {
+      console.error('Error fetching drivers:', error);
+    }
+  };
 
   const fetchFuelExpenses = async () => {
     try {
       setLoading(true);
-      const response = await getAllFuelExpenses();
-      setFuelExpenses(response.data || []);
+      let response;
+      if (selectedDriverId) {
+        response = await getFuelExpensesByDriverId(selectedDriverId);
+      } else {
+        response = await getAllFuelExpenses();
+      }
+
+      console.log('Fuel Expenses API Response:', response);
+
+      // Handle different response structures
+      const expensesData = response.data?.data || response.data || [];
+      console.log('Processed Expenses Data:', expensesData);
+
+      setFuelExpenses(Array.isArray(expensesData) ? expensesData : []);
     } catch (error) {
       console.error('Error fetching fuel expenses:', error);
+      // Show user-friendly error message if backend association error
+      if (error.error && error.error.includes('association')) {
+        console.warn('Backend database association error. Please contact the backend developer to fix the Driver-FuelExpense association.');
+      }
+      setFuelExpenses([]);
     } finally {
       setLoading(false);
     }
@@ -89,13 +123,20 @@ const FuelExpenseManagement = () => {
           </button>
         </div>
         <div className="flex justify-between items-center mb-6">
-          <h1 className="text-3xl font-bold text-gray-900">Fuel Expense Management</h1>
+          <h1 className="text-3xl font-bold text-gray-900">
+            Fuel Expense Management
+            {selectedDriverId && drivers.find(d => (d.id || d.did) == selectedDriverId)
+              ? ` - ${drivers.find(d => (d.id || d.did) == selectedDriverId).driver_name}`
+              : ''}
+          </h1>
         </div>
+
+
 
         {/* Add Button */}
         <div className="flex justify-end mb-4">
           <button
-            onClick={() => navigate('/drivers/1/fuel-expenses')}
+            onClick={() => navigate(selectedDriverId ? `/drivers/${selectedDriverId}/fuel-expenses` : '/drivers/1/fuel-expenses')}
             className="flex items-center gap-2 px-6 py-3 bg-teal-600 text-white rounded-lg font-medium hover:bg-teal-700 transition-colors"
           >
             <Plus className="w-5 h-5" />
@@ -127,31 +168,37 @@ const FuelExpenseManagement = () => {
                   </tr>
                 ) : fuelExpenses.length === 0 ? (
                   <tr>
-                    <td colSpan="9" className="px-6 py-8 text-center text-gray-500">No fuel expenses found</td>
+                    <td colSpan="9" className="px-6 py-8 text-center text-gray-500">
+                      {selectedDriverId ? 'No fuel expenses found for this driver' : 'No fuel expenses found'}
+                    </td>
                   </tr>
                 ) : (
                   fuelExpenses.map((expense, index) => (
-                  <tr key={expense.id} className={`border-b border-gray-200 hover:bg-gray-50 transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`}>
-                    <td className="px-6 py-4 text-sm text-gray-900">{expense.date}</td>
-                    <td className="px-6 py-4 text-sm font-medium text-gray-900">{expense.driver?.driver_name || 'N/A'}</td>
-                    <td className="px-6 py-4 text-sm text-gray-900">{expense.driver?.vehicle_number || 'N/A'}</td>
-                    <td className="px-6 py-4 text-sm text-gray-900">{expense.fuel_type}</td>
-                    <td className="px-6 py-4 text-sm text-gray-900">{expense.petrol_bunk_name}</td>
-                    <td className="px-6 py-4 text-sm text-gray-900">₹{parseFloat(expense.unit_price).toFixed(2)}</td>
-                    <td className="px-6 py-4 text-sm text-gray-900">{expense.litre}</td>
-                    <td className="px-6 py-4 text-sm font-semibold text-gray-900">₹{parseFloat(expense.total_amount).toFixed(2)}</td>
-                    <td className="px-6 py-4">
-                      <div className="relative">
-                        <button
-                          onClick={(event) => toggleDropdown(expense.id, event)}
-                          className="text-[#6B8782] hover:text-[#0D5C4D] transition-colors p-1 hover:bg-[#F0F4F3] rounded"
-                        >
-                          <MoreVertical size={20} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                    <tr key={expense.id} className={`border-b border-gray-200 hover:bg-gray-50 transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}`}>
+                      <td className="px-6 py-4 text-sm text-gray-900">{expense.date}</td>
+                      <td className="px-6 py-4 text-sm font-medium text-gray-900">{expense.driver?.driver_name || drivers.find(d => d.id === expense.driver_id || d.did === expense.driver_id)?.driver_name || 'N/A'}</td>
+                      <td className="px-6 py-4 text-sm text-gray-900">
+                        {expense.driver?.vehicle_number ||
+                          drivers.find(d => d.id === expense.driver_id || d.did === expense.driver_id)?.vehicle_number ||
+                          'N/A'}
+                      </td>
+                      <td className="px-6 py-4 text-sm text-gray-900">{expense.fuel_type}</td>
+                      <td className="px-6 py-4 text-sm text-gray-900">{expense.petrol_bunk_name}</td>
+                      <td className="px-6 py-4 text-sm text-gray-900">₹{parseFloat(expense.unit_price).toFixed(2)}</td>
+                      <td className="px-6 py-4 text-sm text-gray-900">{expense.litre}</td>
+                      <td className="px-6 py-4 text-sm font-semibold text-gray-900">₹{parseFloat(expense.total_amount).toFixed(2)}</td>
+                      <td className="px-6 py-4">
+                        <div className="relative">
+                          <button
+                            onClick={(event) => toggleDropdown(expense.id, event)}
+                            className="text-[#6B8782] hover:text-[#0D5C4D] transition-colors p-1 hover:bg-[#F0F4F3] rounded"
+                          >
+                            <MoreVertical size={20} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
                 )}
               </tbody>
             </table>
@@ -161,12 +208,12 @@ const FuelExpenseManagement = () => {
 
       {/* Dropdown Menu */}
       {openDropdown && (
-        <div 
+        <div
           ref={dropdownRef}
           className="fixed w-32 bg-white rounded-lg shadow-lg border border-[#D0E0DB] py-1 z-[100]"
-          style={{ 
-            top: `${dropdownPosition.top}px`, 
-            left: `${dropdownPosition.left}px` 
+          style={{
+            top: `${dropdownPosition.top}px`,
+            left: `${dropdownPosition.left}px`
           }}
         >
           <button

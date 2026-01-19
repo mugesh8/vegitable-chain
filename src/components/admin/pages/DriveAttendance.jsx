@@ -97,8 +97,8 @@ const DriveAttendance = () => {
           avatarBg: 'bg-teal-700',
           profileImage: driver.profile_image,
           deliveryType: driver.delivery_type || 'N/A',
-          deliveryTypeBg: driver.delivery_type === 'Local Pickup' ? 'bg-blue-100' : driver.delivery_type === 'Line Airport' ? 'bg-orange-100' : 'bg-purple-100',
-          deliveryTypeText: driver.delivery_type === 'Local Pickup' ? 'text-blue-700' : driver.delivery_type === 'Line Airport' ? 'text-orange-700' : 'text-purple-700',
+          deliveryTypeBg: driver.delivery_type === 'LOCAL GRADE ORDER' ? 'bg-blue-100' : driver.delivery_type === 'BOX ORDER' ? 'bg-orange-100' : 'bg-purple-100',
+          deliveryTypeText: driver.delivery_type === 'LOCAL GRADE ORDER' ? 'text-blue-700' : driver.delivery_type === 'BOX ORDER' ? 'text-orange-700' : 'text-purple-700',
           checkIn: driver.check_in_time || '--:-- --',
           checkOut: driver.check_out_time || '--:-- --',
           status: driver.attendance_status || 'Not Marked',
@@ -233,8 +233,8 @@ const DriveAttendance = () => {
             className="appearance-none bg-white border border-[#D0E0DB] rounded-lg px-4 py-2.5 pr-10 text-sm text-[#0D5C4D] focus:outline-none focus:ring-2 focus:ring-[#0D8568] cursor-pointer min-w-[160px]"
           >
             <option value="All">Delivery Type: All</option>
-            <option value="Local Pickup">Local Pickup</option>
-            <option value="Line Airport">Line Airport</option>
+            <option value="LOCAL GRADE ORDER">LOCAL GRADE ORDER</option>
+            <option value="BOX ORDER">BOX ORDER</option>
             <option value="Both Types">Both Types</option>
           </select>
           <ChevronDown className="absolute right-3 top-1/2 transform -translate-y-1/2 text-[#6B8782] pointer-events-none" size={16} />

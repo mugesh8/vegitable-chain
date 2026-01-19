@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import ConfirmDeleteModal from '../../common/ConfirmDeleteModal';
+import { getAllDriverRates, createDriverRate, updateDriverRate, deleteDriverRate } from '../../../api/driverRateApi';
 
 const DriverRateManagement = () => {
   const navigate = useNavigate();
@@ -12,14 +13,29 @@ const DriverRateManagement = () => {
   const [selectedRate, setSelectedRate] = useState(null);
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: null, name: '' });
 
-  const [driverRates, setDriverRates] = useState([
-    { id: 1, deliveryType: 'Local Pickups', amount: 800, status: 'Active' },
-    { id: 2, deliveryType: 'Line Airport', amount: 1200, status: 'Active' },
-    { id: 3, deliveryType: 'Both Types', amount: 1500, status: 'Active' },
-  ]);
+  const [driverRates, setDriverRates] = useState([]);
+  const [loading, setLoading] = useState(false);
 
   const itemsPerPage = 7;
-  const [formData, setFormData] = useState({ deliveryType: 'Local Pickups', amount: '', status: 'Active' });
+  const [formData, setFormData] = useState({ deliveryType: 'LOCAL GRADE ORDER', amount: '', status: 'Active' });
+
+  useEffect(() => {
+    fetchDriverRates();
+  }, []);
+
+  const fetchDriverRates = async () => {
+    try {
+      setLoading(true);
+      const response = await getAllDriverRates();
+      if (response.success) {
+        setDriverRates(response.data);
+      }
+    } catch (error) {
+      console.error('Error fetching driver rates:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleEdit = (rate) => {
     setSelectedRate(rate);
@@ -31,26 +47,49 @@ const DriverRateManagement = () => {
     setDeleteModal({ isOpen: true, id, name: deliveryType });
   };
 
-  const confirmDelete = () => {
-    setDriverRates(driverRates.filter(rate => rate.id !== deleteModal.id));
-    setDeleteModal({ isOpen: false, id: null, name: '' });
+  const confirmDelete = async () => {
+    try {
+      await deleteDriverRate(deleteModal.id);
+      await fetchDriverRates();
+      setDeleteModal({ isOpen: false, id: null, name: '' });
+    } catch (error) {
+      console.error('Error deleting driver rate:', error);
+      alert('Failed to delete driver rate');
+    }
   };
 
-  const handleAddSubmit = (e) => {
+  const handleAddSubmit = async (e) => {
     e.preventDefault();
-    const newRate = { id: driverRates.length + 1, ...formData, amount: parseFloat(formData.amount) };
-    setDriverRates([...driverRates, newRate]);
-    setIsAddModalOpen(false);
-    setFormData({ deliveryType: 'Local Pickups', amount: '', status: 'Active' });
+    try {
+      setLoading(true);
+      await createDriverRate(formData);
+      await fetchDriverRates();
+      setIsAddModalOpen(false);
+      setFormData({ deliveryType: 'LOCAL GRADE ORDER', amount: '', status: 'Active' });
+    } catch (error) {
+      console.error('Error creating driver rate:', error);
+      alert('Failed to create driver rate');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleEditSubmit = (e) => {
+  const handleEditSubmit = async (e) => {
     e.preventDefault();
-    setDriverRates(driverRates.map(rate => 
-      rate.id === selectedRate.id ? { ...rate, ...formData, amount: parseFloat(formData.amount) } : rate
-    ));
-    setIsEditModalOpen(false);
-    setFormData({ deliveryType: 'Local Pickups', amount: '', status: 'Active' });
+    try {
+      setLoading(true);
+      const rateId = selectedRate.drid || selectedRate.id;
+      await updateDriverRate(rateId, formData);
+      await fetchDriverRates();
+      setIsEditModalOpen(false);
+      setFormData({ deliveryType: 'LOCAL GRADE ORDER', amount: '', status: 'Active' });
+      setSelectedRate(null);
+    } catch (error) {
+      console.error('Error updating driver rate:', error);
+      alert('Failed to update driver rate');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const filteredRates = driverRates.filter(rate =>
@@ -103,14 +142,14 @@ const DriverRateManagement = () => {
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {paginatedRates.map((rate) => (
-                  <tr key={rate.id} className="hover:bg-gray-50 transition-colors">
+                  <tr key={rate.drid || rate.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-6 py-4 text-sm text-gray-900">{rate.deliveryType}</td>
                     <td className="px-6 py-4 text-sm text-gray-900">₹{rate.amount}</td>
                     <td className="px-6 py-4 text-sm"><span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${rate.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-yellow-100 text-yellow-700'}`}>{rate.status}</span></td>
                     <td className="px-6 py-4 text-sm">
                       <div className="flex gap-2">
                         <button onClick={() => handleEdit(rate)} className="px-4 py-1.5 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium">Edit</button>
-                        <button onClick={() => handleDelete(rate.id, rate.deliveryType)} className="px-4 py-1.5 text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors text-sm font-medium">Delete</button>
+                        <button onClick={() => handleDelete(rate.drid || rate.id, rate.deliveryType)} className="px-4 py-1.5 text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors text-sm font-medium">Delete</button>
                       </div>
                     </td>
                   </tr>
@@ -133,8 +172,8 @@ const DriverRateManagement = () => {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Driver Delivery Type</label>
                 <select required value={formData.deliveryType} onChange={(e) => setFormData({ ...formData, deliveryType: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500">
-                  <option value="Local Pickups">Local Pickups</option>
-                  <option value="Line Airport">Line Airport</option>
+                  <option value="LOCAL GRADE ORDER">LOCAL GRADE ORDER</option>
+                  <option value="BOX ORDER">BOX ORDER</option>
                   <option value="Both Types">Both Types</option>
                 </select>
               </div>
@@ -151,7 +190,7 @@ const DriverRateManagement = () => {
               </div>
               <div className="flex gap-3 pt-4">
                 <button type="button" onClick={() => setIsAddModalOpen(false)} className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium">Cancel</button>
-                <button type="submit" className="flex-1 px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 font-medium">Add Rate</button>
+                <button type="submit" disabled={loading} className="flex-1 px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 font-medium disabled:opacity-50">{loading ? 'Adding...' : 'Add Rate'}</button>
               </div>
             </form>
           </div>
@@ -179,8 +218,8 @@ const DriverRateManagement = () => {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Driver Delivery Type</label>
                 <select required value={formData.deliveryType} onChange={(e) => setFormData({ ...formData, deliveryType: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500">
-                  <option value="Local Pickups">Local Pickups</option>
-                  <option value="Line Airport">Line Airport</option>
+                  <option value="LOCAL GRADE ORDER">LOCAL GRADE ORDER</option>
+                  <option value="BOX ORDER">BOX ORDER</option>
                   <option value="Both Types">Both Types</option>
                 </select>
               </div>
@@ -197,7 +236,7 @@ const DriverRateManagement = () => {
               </div>
               <div className="flex gap-3 pt-4">
                 <button type="button" onClick={() => setIsEditModalOpen(false)} className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium">Cancel</button>
-                <button type="submit" className="flex-1 px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 font-medium">Update Rate</button>
+                <button type="submit" disabled={loading} className="flex-1 px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 font-medium disabled:opacity-50">{loading ? 'Updating...' : 'Update Rate'}</button>
               </div>
             </form>
           </div>

@@ -15,6 +15,8 @@ const OrderAssignCreateStage3 = () => {
   const [drivers, setDrivers] = useState([]);
   const [productRows, setProductRows] = useState([]);
   const [airports, setAirports] = useState([]);
+  const [tapes, setTapes] = useState([]);
+  const [airportTapeData, setAirportTapeData] = useState({});
 
   // Helper function to parse num_boxes
   const parseNumBoxes = (numBoxesStr) => {
@@ -27,14 +29,21 @@ const OrderAssignCreateStage3 = () => {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [driversResponse, airportsResponse] = await Promise.all([
+        const [driversResponse, airportsResponse, tapesResponse] = await Promise.all([
           getPresentDriversToday(),
-          getAllAirports()
+          getAllAirports(),
+          (async () => {
+            const { getTapes } = await import('../../../api/inventoryApi');
+            return getTapes();
+          })()
         ]);
 
         const presentDrivers = driversResponse.data?.map(record => record.driver).filter(d => d) || [];
         setDrivers(presentDrivers);
         setAirports(airportsResponse.data || []);
+        if (tapesResponse.success) {
+          setTapes(tapesResponse.data || []);
+        }
 
         // Load assignment data to get stage2 and stage3 assignments
         let stage2LabourMap = {};
@@ -44,7 +53,13 @@ const OrderAssignCreateStage3 = () => {
           const assignmentResponse = await getOrderAssignment(id);
           const assignmentData = assignmentResponse.data;
 
-          //console.log('Full assignment data:', assignmentData);
+          console.log('=== FULL ASSIGNMENT DATA ===');
+          console.log('All keys:', Object.keys(assignmentData));
+          console.log('stage2_summary_data exists?', !!assignmentData.stage2_summary_data);
+          console.log('stage2_summary_data type:', typeof assignmentData.stage2_summary_data);
+          if (assignmentData.stage2_summary_data) {
+            console.log('stage2_summary_data raw:', assignmentData.stage2_summary_data);
+          }
 
           // Get labour data from stage1_summary_data
           if (assignmentData.stage1_summary_data) {
@@ -54,14 +69,14 @@ const OrderAssignCreateStage3 = () => {
                 : assignmentData.stage1_summary_data;
 
               //console.log('Stage 1 Summary Data:', stage1Data);
-              
+
               // Extract labour from driverAssignments
               if (stage1Data.driverAssignments) {
                 stage1Data.driverAssignments.forEach(driverGroup => {
                   driverGroup.assignments?.forEach(assignment => {
                     const oiid = String(assignment.oiid).split('-')[0];
                     const labours = assignment.labour || [];
-                    
+
                     if (labours.length > 0) {
                       if (!stage2LabourMap[oiid]) {
                         stage2LabourMap[oiid] = [];
@@ -75,63 +90,109 @@ const OrderAssignCreateStage3 = () => {
                   });
                 });
               }
-              
-              //console.log('Labour Map before conversion:', stage2LabourMap);
-              
-              // Convert arrays to comma-separated strings
-              Object.keys(stage2LabourMap).forEach(key => {
-                stage2LabourMap[key] = stage2LabourMap[key].join(', ');
-              });
-              
-              //console.log('Final Labour Map:', stage2LabourMap);
+
+              console.log('Labour Map from stage1_summary_data (still arrays):', stage2LabourMap);
             } catch (e) {
               console.error('Error parsing stage1_summary_data:', e);
             }
           }
 
-          // Try multiple possible field names for stage2 data
-          let stage2DataRaw = assignmentData.stage2_data || 
-                              assignmentData.stage2_summary_data || 
-                              assignmentData.stage2SummaryData ||
-                              assignmentData.summary_data;
+          // Parse stage2_summary_data to get labour data (PRIMARY SOURCE)
+          if (assignmentData.stage2_summary_data) {
+            try {
+              const stage2SummaryData = typeof assignmentData.stage2_summary_data === 'string'
+                ? JSON.parse(assignmentData.stage2_summary_data)
+                : assignmentData.stage2_summary_data;
 
-          // Parse stage2_data to get labour data (fallback)
+              console.log('=== STAGE 2 SUMMARY DATA ===');
+              console.log('Full structure:', stage2SummaryData);
+
+              // The structure is: labourAssignments -> each has labour name and assignments array
+              const labourAssignments = stage2SummaryData.labourAssignments || [];
+
+              console.log('Labour Assignments found:', labourAssignments.length);
+
+              labourAssignments.forEach(labourGroup => {
+                const labourName = labourGroup.labour;
+                const assignments = labourGroup.assignments || [];
+
+                console.log(`Processing labour: ${labourName}, assignments:`, assignments.length);
+
+                assignments.forEach(assignment => {
+                  const productId = assignment.oiid || assignment.id;
+
+                  console.log(`  - Product ${productId}: adding labour "${labourName}"`);
+
+                  if (productId && labourName) {
+                    if (!stage2LabourMap[productId]) {
+                      stage2LabourMap[productId] = [];
+                    }
+
+                    // Add labour if not already in the list
+                    if (!stage2LabourMap[productId].includes(labourName)) {
+                      stage2LabourMap[productId].push(labourName);
+                    }
+                  }
+                });
+              });
+
+              console.log('Labour Map from stage2_summary_data:', stage2LabourMap);
+            } catch (e) {
+              console.error('Error parsing stage2_summary_data:', e);
+            }
+          }
+
+          // Try multiple possible field names for stage2 data (fallback)
+          let stage2DataRaw = assignmentData.stage2_data ||
+            assignmentData.stage2SummaryData ||
+            assignmentData.summary_data;
+
+          // Parse stage2_data to get labour data (fallback if summary didn't have it)
           if (stage2DataRaw && Object.keys(stage2LabourMap).length === 0) {
             try {
               const stage2Data = typeof stage2DataRaw === 'string'
                 ? JSON.parse(stage2DataRaw)
                 : stage2DataRaw;
 
-              //console.log('Stage 2 Data:', stage2Data);
-              const productAssignments = stage2Data.productAssignments || [];
-              //console.log('Product Assignments:', productAssignments);
-              
+              console.log('Stage 2 Data (fallback):', stage2Data);
+              const productAssignments = stage2Data.productAssignments ||
+                stage2Data.assignments ||
+                stage2Data.stage2Assignments || [];
+              console.log('Product Assignments (fallback):', productAssignments);
+
               productAssignments.forEach(pa => {
-                //console.log('Processing assignment:', pa);
-                if (pa.id && pa.labourName) {
-                  if (!stage2LabourMap[pa.id]) {
-                    stage2LabourMap[pa.id] = [];
+                const productId = pa.id || pa.oiid;
+                const labourName = pa.labourName || pa.labourNames || pa.labour;
+
+                if (productId && labourName) {
+                  if (!stage2LabourMap[productId]) {
+                    stage2LabourMap[productId] = [];
                   }
-                  if (!stage2LabourMap[pa.id].includes(pa.labourName)) {
-                    stage2LabourMap[pa.id].push(pa.labourName);
-                  }
+
+                  // Handle both string and array labour names
+                  const labourArray = Array.isArray(labourName) ? labourName : [labourName];
+                  labourArray.forEach(labour => {
+                    if (labour && !stage2LabourMap[productId].includes(labour)) {
+                      stage2LabourMap[productId].push(labour);
+                    }
+                  });
                 }
               });
-              
-              //console.log('Labour Map before conversion:', stage2LabourMap);
-              
-              // Convert arrays to comma-separated strings
-              Object.keys(stage2LabourMap).forEach(key => {
-                stage2LabourMap[key] = stage2LabourMap[key].join(', ');
-              });
-              
-              //console.log('Final Labour Map:', stage2LabourMap);
+
+              console.log('Labour Map from stage2_data:', stage2LabourMap);
             } catch (e) {
               console.error('Error parsing stage2_data:', e);
             }
-          } else {
-            //console.log('No stage2_data found in assignment data');
           }
+
+          // Convert arrays to comma-separated strings
+          Object.keys(stage2LabourMap).forEach(key => {
+            if (Array.isArray(stage2LabourMap[key])) {
+              stage2LabourMap[key] = stage2LabourMap[key].join(', ');
+            }
+          });
+
+          console.log('Final Labour Map:', stage2LabourMap);
 
           // Parse stage3_data to get saved stage3 data
           if (assignmentData.stage3_data) {
@@ -140,6 +201,11 @@ const OrderAssignCreateStage3 = () => {
                 ? JSON.parse(assignmentData.stage3_data)
                 : assignmentData.stage3_data;
               stage3Products = stage3Data.products || [];
+
+              // Load airport tape data
+              if (stage3Data.airportTapeData) {
+                setAirportTapeData(stage3Data.airportTapeData);
+              }
             } catch (e) {
               console.error('Error parsing stage3_data:', e);
             }
@@ -219,8 +285,8 @@ const OrderAssignCreateStage3 = () => {
     if (!airportName) return 1;
 
     // Get all rows assigned to this airport (excluding current row)
-    const airportRows = currentRows.filter(row => 
-      row.airportName === airportName && 
+    const airportRows = currentRows.filter(row =>
+      row.airportName === airportName &&
       row.id !== currentRowId &&
       row.ct
     );
@@ -311,17 +377,17 @@ const OrderAssignCreateStage3 = () => {
       const numPkgs = parseInt(value);
       if (numPkgs > 0) {
         const currentRow = updatedRows[index];
-        
+
         // Get next available position for this airport (continuous across all products)
         const startPosition = getNextCTPositionForAirport(
-          currentRow.airportName, 
-          currentRow.id, 
+          currentRow.airportName,
+          currentRow.id,
           numPkgs,
           updatedRows
         );
-        
+
         const endPosition = startPosition + numPkgs - 1;
-        
+
         // Check if it exceeds total boxes for THIS product
         if (endPosition - startPosition + 1 <= currentRow.totalBoxes) {
           updatedRows[index].ct = `${startPosition}-${endPosition}`;
@@ -392,17 +458,17 @@ const OrderAssignCreateStage3 = () => {
       const numPkgs = parseInt(updatedRows[index].noOfPkgs);
       if (numPkgs > 0) {
         const currentRow = updatedRows[index];
-        
+
         // Get next available position for this airport (continuous across all products)
         const startPosition = getNextCTPositionForAirport(
-          airportName, 
-          currentRow.id, 
+          airportName,
+          currentRow.id,
           numPkgs,
           updatedRows
         );
-        
+
         const endPosition = startPosition + numPkgs - 1;
-        
+
         if (endPosition - startPosition + 1 <= currentRow.totalBoxes) {
           updatedRows[index].ct = `${startPosition}-${endPosition}`;
         } else {
@@ -417,7 +483,7 @@ const OrderAssignCreateStage3 = () => {
   const handleAddCTAssignment = (oiid) => {
     const sameProductRows = productRows.filter(row => row.oiid === oiid);
     const firstRow = sameProductRows[0];
-    
+
     // Check if total packages already equals total boxes/bags
     const totalPackages = sameProductRows.reduce((sum, row) => sum + (parseInt(row.noOfPkgs) || 0), 0);
     if (totalPackages >= firstRow.totalBoxes) {
@@ -524,12 +590,12 @@ const OrderAssignCreateStage3 = () => {
       const customerName = orderData?.customer_name || '';
       const prefix = customerName.replace(/\d+$/, '').trim() || customerName;
       const allAirports = [...new Set(productRows.filter(p => p.airportName).map(p => p.airportName))];
-      
+
       allAirports.forEach((airport, index) => {
         const sequentialNumber = String(index + 1).padStart(3, '0');
         const airportCode = `${prefix}${sequentialNumber}`;
         const airportProducts = productRows.filter(p => p.airportName === airport);
-        
+
         airportGroups[airportCode] = {
           airportName: airport,
           airportLocation: airportProducts[0]?.airportLocation || '',
@@ -581,7 +647,8 @@ const OrderAssignCreateStage3 = () => {
 
       const stage3Data = {
         products,
-        summaryData
+        summaryData,
+        airportTapeData
       };
 
       //console.log('Saving stage 3 data:', JSON.stringify(stage3Data, null, 2));
@@ -772,6 +839,7 @@ const OrderAssignCreateStage3 = () => {
                     <td className="px-4 py-4">
                       <span className="text-sm text-gray-900">{row.vehicleCapacity || selectedDriverInfo?.capacity || '-'}</span>
                     </td>
+
                     <td className="px-4 py-4">
                       <div className="flex gap-2 items-center">
                         {isLastOfGroup && (
@@ -840,7 +908,7 @@ const OrderAssignCreateStage3 = () => {
               const allAirports = [...new Set(productRows.filter(p => p.airportName).map(p => p.airportName))];
               const customerName = orderData?.customer_name || '';
               const prefix = customerName.replace(/\d+$/, '').trim() || customerName;
-              
+
               allAirports.forEach((airport, index) => {
                 const sequentialNumber = String(index + 1).padStart(3, '0');
                 globalAirportCodeMap[airport] = `${prefix}${sequentialNumber}`;
@@ -921,6 +989,7 @@ const OrderAssignCreateStage3 = () => {
                               <td className="px-4 py-3">
                                 <span className="text-sm text-gray-600">{product.airportLocation || '-'}</span>
                               </td>
+
                               <td className="px-4 py-3">
                                 <select
                                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
@@ -942,6 +1011,86 @@ const OrderAssignCreateStage3 = () => {
                             </tr>
                           ))}
                         </tbody>
+
+                        {/* Tape Selection Section - Above Driver Total */}
+                        {(() => {
+                          const driverAirports = [...new Set(productsWithSequentialNumbers.map(p => p.airportName).filter(a => a))];
+
+                          if (driverAirports.length > 0) {
+                            return (
+                              <tbody>
+                                <tr>
+                                  <td colSpan="8" className="px-4 py-4 bg-blue-50 border-t-2 border-blue-200">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                                      {driverAirports.map((airport) => {
+                                        const airportCode = globalAirportCodeMap[airport] || '-';
+
+                                        return (
+                                          <div key={airport} className="border-2 border-blue-200 rounded-lg p-3 bg-white">
+                                            <div className="mb-2">
+                                              <div className="flex items-center justify-between mb-1">
+                                                <span className="text-xs font-bold text-blue-600">{airportCode}</span>
+                                                <MapPin className="w-3 h-3 text-gray-400" />
+                                              </div>
+                                              <p className="text-xs text-gray-600 font-medium">{airport}</p>
+                                            </div>
+
+                                            <div className="space-y-2">
+                                              <div>
+                                                <label className="block text-xs font-semibold text-gray-700 mb-1">Tape Color</label>
+                                                <select
+                                                  className="w-full px-2 py-1.5 border border-gray-300 rounded text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white"
+                                                  value={airportTapeData[airport]?.tapeColor || ''}
+                                                  onChange={(e) => {
+                                                    setAirportTapeData(prev => ({
+                                                      ...prev,
+                                                      [airport]: {
+                                                        ...prev[airport],
+                                                        tapeColor: e.target.value
+                                                      }
+                                                    }));
+                                                  }}
+                                                >
+                                                  <option value="">Select tape...</option>
+                                                  {tapes.map(tape => (
+                                                    <option key={tape.iid} value={tape.color}>
+                                                      {tape.color}
+                                                    </option>
+                                                  ))}
+                                                </select>
+                                              </div>
+
+                                              <div>
+                                                <label className="block text-xs font-semibold text-gray-700 mb-1">Tape Quantity</label>
+                                                <input
+                                                  type="text"
+                                                  value={airportTapeData[airport]?.tapeQuantity || ''}
+                                                  placeholder="Enter quantity"
+                                                  onChange={(e) => {
+                                                    setAirportTapeData(prev => ({
+                                                      ...prev,
+                                                      [airport]: {
+                                                        ...prev[airport],
+                                                        tapeQuantity: e.target.value
+                                                      }
+                                                    }));
+                                                  }}
+                                                  className="w-full px-2 py-1.5 border border-gray-300 rounded text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                                />
+                                              </div>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </td>
+                                </tr>
+                              </tbody>
+                            );
+                          }
+                          return null;
+                        })()}
+
                         <tfoot className="bg-emerald-100 border-t-2 border-emerald-300">
                           <tr>
                             <td colSpan="4" className="px-4 py-3 text-right">
@@ -986,7 +1135,7 @@ const OrderAssignCreateStage3 = () => {
               const allAirports = [...new Set(productRows.filter(p => p.airportName).map(p => p.airportName))];
               const customerName = orderData?.customer_name || '';
               const prefix = customerName.replace(/\d+$/, '').trim() || customerName;
-              
+
               allAirports.forEach((airport, index) => {
                 const sequentialNumber = String(index + 1).padStart(3, '0');
                 globalAirportCodeMap[airport] = `${prefix}${sequentialNumber}`;
@@ -1057,6 +1206,7 @@ const OrderAssignCreateStage3 = () => {
                               <span className="text-gray-600">Location:</span>
                               <span className="text-gray-900">{product.airportLocation || '-'}</span>
                             </div>
+
                             <div className="pt-2 border-t border-gray-200">
                               <label className="block text-xs font-semibold text-gray-700 mb-1">Status</label>
                               <select
@@ -1079,6 +1229,85 @@ const OrderAssignCreateStage3 = () => {
                           </div>
                         </div>
                       ))}
+
+                      {/* Tape Selection Section - Above Driver Total */}
+                      {(() => {
+                        const driverAirports = [...new Set(productsWithSequentialNumbers.map(p => p.airportName).filter(a => a))];
+
+                        if (driverAirports.length > 0) {
+                          return (
+                            <div className="bg-blue-50 rounded-lg p-3 border-2 border-blue-200">
+                              <div className="mb-3">
+                                <h4 className="text-sm font-bold text-blue-900 mb-1">Tape Selection for Airport Groups</h4>
+                                <p className="text-xs text-gray-600">Select tape color and quantity for each airport</p>
+                              </div>
+                              <div className="space-y-3">
+                                {driverAirports.map((airport) => {
+                                  const airportCode = globalAirportCodeMap[airport] || '-';
+
+                                  return (
+                                    <div key={airport} className="border-2 border-blue-200 rounded-lg p-3 bg-white">
+                                      <div className="mb-2">
+                                        <div className="flex items-center justify-between mb-1">
+                                          <span className="text-xs font-bold text-blue-600">{airportCode}</span>
+                                          <MapPin className="w-3 h-3 text-gray-400" />
+                                        </div>
+                                        <p className="text-xs text-gray-600 font-medium">{airport}</p>
+                                      </div>
+
+                                      <div className="space-y-2">
+                                        <div>
+                                          <label className="block text-xs font-semibold text-gray-700 mb-1">Tape Color</label>
+                                          <select
+                                            className="w-full px-2 py-1.5 border border-gray-300 rounded text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white"
+                                            value={airportTapeData[airport]?.tapeColor || ''}
+                                            onChange={(e) => {
+                                              setAirportTapeData(prev => ({
+                                                ...prev,
+                                                [airport]: {
+                                                  ...prev[airport],
+                                                  tapeColor: e.target.value
+                                                }
+                                              }));
+                                            }}
+                                          >
+                                            <option value="">Select tape...</option>
+                                            {tapes.map(tape => (
+                                              <option key={tape.iid} value={tape.color}>
+                                                {tape.color}
+                                              </option>
+                                            ))}
+                                          </select>
+                                        </div>
+
+                                        <div>
+                                          <label className="block text-xs font-semibold text-gray-700 mb-1">Tape Quantity</label>
+                                          <input
+                                            type="text"
+                                            value={airportTapeData[airport]?.tapeQuantity || ''}
+                                            placeholder="Enter quantity"
+                                            onChange={(e) => {
+                                              setAirportTapeData(prev => ({
+                                                ...prev,
+                                                [airport]: {
+                                                  ...prev[airport],
+                                                  tapeQuantity: e.target.value
+                                                }
+                                              }));
+                                            }}
+                                            className="w-full px-2 py-1.5 border border-gray-300 rounded text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                                          />
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
 
                       <div className="bg-emerald-100 rounded-lg p-3 border-2 border-emerald-300">
                         <div className="space-y-2 text-sm">

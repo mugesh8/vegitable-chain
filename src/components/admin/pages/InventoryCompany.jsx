@@ -7,6 +7,7 @@ const InventoryCompany = () => {
     const navigate = useNavigate();
     const location = useLocation();
     const [companies, setCompanies] = useState([]);
+    const [currentPage, setCurrentPage] = useState(1);
     const [isAddModalOpen, setIsAddModalOpen] = useState(false);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [selectedCompany, setSelectedCompany] = useState(null);
@@ -49,7 +50,7 @@ const InventoryCompany = () => {
 
     const handleEdit = (company) => {
         setSelectedCompany(company);
-        setFormData({ 
+        setFormData({
             name: company.name,
             paid_amount: company.paid_amount || 0,
             payment_status: company.payment_status || 'unpaid'
@@ -144,6 +145,11 @@ const InventoryCompany = () => {
     const filteredCompanies = companies.filter(company =>
         company.name.toLowerCase().includes(searchTerm.toLowerCase())
     );
+
+    const itemsPerPage = 7;
+    const totalPages = Math.ceil(filteredCompanies.length / itemsPerPage);
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const paginatedCompanies = filteredCompanies.slice(startIndex, startIndex + itemsPerPage);
 
     if (viewingHistory) {
         return (
@@ -282,10 +288,9 @@ const InventoryCompany = () => {
                     </button>
                     <button
                         onClick={() => navigate('/settings/customers')}
-                        className={`px-6 py-2.5 rounded-lg font-medium text-sm transition-colors ${
-                            location.pathname === '/settings/customers'
-                                ? 'bg-[#0D7C66] text-white'
-                                : 'bg-[#D4F4E8] text-[#0D5C4D] hover:bg-[#B8F4D8]'
+                        className={`px-6 py-2.5 rounded-lg font-medium text-sm transition-colors ${location.pathname === '/settings/customers'
+                            ? 'bg-[#0D7C66] text-white'
+                            : 'bg-[#D4F4E8] text-[#0D5C4D] hover:bg-[#B8F4D8]'
                             }`}
                     >
                         Customers
@@ -367,7 +372,7 @@ const InventoryCompany = () => {
                                         </td>
                                     </tr>
                                 ) : (
-                                    filteredCompanies.map((company) => (
+                                    paginatedCompanies.map((company) => (
                                         <tr key={company.id} className="hover:bg-gray-50 transition-colors">
                                             <td className="px-6 py-4 text-sm text-gray-900">{company.name}</td>
                                             <td className="px-6 py-4 text-sm text-gray-900">
@@ -420,8 +425,8 @@ const InventoryCompany = () => {
                                                 <button
                                                     onClick={() => handlePaymentStatusChange(company.id, company.payment_status)}
                                                     className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${company.payment_status === 'paid'
-                                                            ? 'bg-green-100 text-green-700 hover:bg-green-200'
-                                                            : 'bg-red-100 text-red-700 hover:bg-red-200'
+                                                        ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                                                        : 'bg-red-100 text-red-700 hover:bg-red-200'
                                                         }`}
                                                 >
                                                     {company.payment_status === 'paid' ? 'Paid' : 'Unpaid'}
@@ -455,143 +460,206 @@ const InventoryCompany = () => {
                             </tbody>
                         </table>
                     </div>
+                    {/* Pagination */}
+                    <div className="px-6 py-4 border-t border-gray-200 flex flex-col sm:flex-row items-center justify-between gap-4">
+                        <div className="text-sm text-gray-600">
+                            Showing {filteredCompanies.length === 0 ? 0 : startIndex + 1} to {Math.min(startIndex + itemsPerPage, filteredCompanies.length)} of {filteredCompanies.length} companies
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                                disabled={currentPage === 1}
+                                className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            >
+                                <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                                </svg>
+                            </button>
+
+                            {[...Array(totalPages)].map((_, index) => {
+                                const pageNumber = index + 1;
+                                if (
+                                    pageNumber === 1 ||
+                                    pageNumber === totalPages ||
+                                    (pageNumber >= currentPage - 1 && pageNumber <= currentPage + 1)
+                                ) {
+                                    return (
+                                        <button
+                                            key={pageNumber}
+                                            onClick={() => setCurrentPage(pageNumber)}
+                                            className={`min-w-[40px] px-3 py-2 rounded-lg text-sm font-medium transition-colors ${currentPage === pageNumber
+                                                ? 'bg-emerald-500 text-white'
+                                                : 'border border-gray-300 text-gray-700 hover:bg-gray-50'
+                                                }`}
+                                        >
+                                            {pageNumber}
+                                        </button>
+                                    );
+                                } else if (
+                                    pageNumber === currentPage - 2 ||
+                                    pageNumber === currentPage + 2
+                                ) {
+                                    return (
+                                        <span key={pageNumber} className="px-2 text-gray-500">
+                                            ...
+                                        </span>
+                                    );
+                                }
+                                return null;
+                            })}
+
+                            <button
+                                onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                                disabled={currentPage === totalPages}
+                                className="p-2 border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            >
+                                <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
 
             {/* Add Modal */}
-            {isAddModalOpen && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-lg w-full max-w-md">
-                        <div className="flex items-center justify-between p-6 border-b border-gray-200">
-                            <h2 className="text-xl font-semibold text-emerald-700">Add Company</h2>
-                            <button
-                                onClick={() => setIsAddModalOpen(false)}
-                                className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
-                            >
-                                <svg className="w-6 h-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                            </button>
-                        </div>
-                        <form onSubmit={handleAdd} className="p-6">
-                            <div className="mb-6">
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Company Name <span className="text-red-500">*</span>
-                                </label>
-                                <input
-                                    type="text"
-                                    value={formData.name}
-                                    onChange={(e) => setFormData({ name: e.target.value })}
-                                    placeholder="Enter company name"
-                                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm"
-                                    required
-                                />
-                            </div>
-                            <div className="flex gap-3">
+            {
+                isAddModalOpen && (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                        <div className="bg-white rounded-lg w-full max-w-md">
+                            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+                                <h2 className="text-xl font-semibold text-emerald-700">Add Company</h2>
                                 <button
-                                    type="button"
                                     onClick={() => setIsAddModalOpen(false)}
-                                    className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+                                    className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
                                 >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    className="flex-1 px-6 py-3 bg-emerald-500 text-white rounded-lg font-medium hover:bg-emerald-600 transition-colors"
-                                >
-                                    Add Company
+                                    <svg className="w-6 h-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
                                 </button>
                             </div>
-                        </form>
+                            <form onSubmit={handleAdd} className="p-6">
+                                <div className="mb-6">
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Company Name <span className="text-red-500">*</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={formData.name}
+                                        onChange={(e) => setFormData({ name: e.target.value })}
+                                        placeholder="Enter company name"
+                                        className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm"
+                                        required
+                                    />
+                                </div>
+                                <div className="flex gap-3">
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsAddModalOpen(false)}
+                                        className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        className="flex-1 px-6 py-3 bg-emerald-500 text-white rounded-lg font-medium hover:bg-emerald-600 transition-colors"
+                                    >
+                                        Add Company
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
             {/* Edit Modal */}
-            {isEditModalOpen && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-lg w-full max-w-md">
-                        <div className="flex items-center justify-between p-6 border-b border-gray-200">
-                            <h2 className="text-xl font-semibold text-emerald-700">Edit Company</h2>
-                            <button
-                                onClick={() => {
-                                    setIsEditModalOpen(false);
-                                    setSelectedCompany(null);
-                                    setFormData({ name: '' });
-                                }}
-                                className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
-                            >
-                                <svg className="w-6 h-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                            </button>
-                        </div>
-                        <form onSubmit={handleUpdate} className="p-6">
-                            <div className="mb-4">
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Company Name <span className="text-red-500">*</span>
-                                </label>
-                                <input
-                                    type="text"
-                                    value={formData.name}
-                                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                    placeholder="Enter company name"
-                                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm"
-                                    required
-                                />
-                            </div>
-                            <div className="mb-4">
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Paid Amount <span className="text-red-500">*</span>
-                                </label>
-                                <input
-                                    type="number"
-                                    step="0.01"
-                                    value={formData.paid_amount}
-                                    onChange={(e) => setFormData({ ...formData, paid_amount: e.target.value })}
-                                    placeholder="Enter paid amount"
-                                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm"
-                                    required
-                                />
-                            </div>
-                            <div className="mb-6">
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Payment Status <span className="text-red-500">*</span>
-                                </label>
-                                <select
-                                    value={formData.payment_status}
-                                    onChange={(e) => setFormData({ ...formData, payment_status: e.target.value })}
-                                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm"
-                                    required
-                                >
-                                    <option value="unpaid">Unpaid</option>
-                                    <option value="paid">Paid</option>
-                                </select>
-                            </div>
-                            <div className="flex gap-3">
+            {
+                isEditModalOpen && (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                        <div className="bg-white rounded-lg w-full max-w-md">
+                            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+                                <h2 className="text-xl font-semibold text-emerald-700">Edit Company</h2>
                                 <button
-                                    type="button"
                                     onClick={() => {
                                         setIsEditModalOpen(false);
                                         setSelectedCompany(null);
                                         setFormData({ name: '' });
                                     }}
-                                    className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+                                    className="p-1 hover:bg-gray-100 rounded-lg transition-colors"
                                 >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    className="flex-1 px-6 py-3 bg-emerald-500 text-white rounded-lg font-medium hover:bg-emerald-600 transition-colors"
-                                >
-                                    Update Company
+                                    <svg className="w-6 h-6 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
                                 </button>
                             </div>
-                        </form>
+                            <form onSubmit={handleUpdate} className="p-6">
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Company Name <span className="text-red-500">*</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={formData.name}
+                                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                        placeholder="Enter company name"
+                                        className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm"
+                                        required
+                                    />
+                                </div>
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Paid Amount <span className="text-red-500">*</span>
+                                    </label>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        value={formData.paid_amount}
+                                        onChange={(e) => setFormData({ ...formData, paid_amount: e.target.value })}
+                                        placeholder="Enter paid amount"
+                                        className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm"
+                                        required
+                                    />
+                                </div>
+                                <div className="mb-6">
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Payment Status <span className="text-red-500">*</span>
+                                    </label>
+                                    <select
+                                        value={formData.payment_status}
+                                        onChange={(e) => setFormData({ ...formData, payment_status: e.target.value })}
+                                        className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm"
+                                        required
+                                    >
+                                        <option value="unpaid">Unpaid</option>
+                                        <option value="paid">Paid</option>
+                                    </select>
+                                </div>
+                                <div className="flex gap-3">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setIsEditModalOpen(false);
+                                            setSelectedCompany(null);
+                                            setFormData({ name: '' });
+                                        }}
+                                        className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        className="flex-1 px-6 py-3 bg-emerald-500 text-white rounded-lg font-medium hover:bg-emerald-600 transition-colors"
+                                    >
+                                        Update Company
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
                     </div>
-                </div>
-            )}
-        </div>
+                )
+            }
+        </div >
     );
 };
 
