@@ -31,7 +31,6 @@ const LabourDetails = () => {
           address: data.address,
           workType: data.work_type,
           department: data.department,
-          dailyWage: `₹${data.daily_wage}`,
           joiningDate: data.joining_date,
           status: data.status,
           profileImage: data.profile_image
@@ -200,11 +199,6 @@ const LabourDetails = () => {
               <span className="bg-teal-100 text-teal-700 px-3 py-1 rounded-full text-sm font-medium">
                 {labour?.department || 'N/A'}
               </span>
-            </div>
-
-            <div>
-              <p className="text-xs font-medium text-gray-500 uppercase mb-1">Daily Wage</p>
-              <p className="text-gray-800 font-semibold">{labour?.dailyWage || 'N/A'}</p>
             </div>
 
             <div>

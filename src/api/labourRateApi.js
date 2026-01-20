@@ -2,15 +2,44 @@ import api from './axiosConfig';
 
 export const getAllLabourRates = async () => {
     try {
-        // Return mock data matching LabourRateManagement.jsx state until backend is ready
-        return [
-            { id: 1, labourType: 'Normal', amount: 500, status: 'Active' },
-            { id: 2, labourType: 'Medium', amount: 750, status: 'Active' },
-            { id: 3, labourType: 'Heavy', amount: 1000, status: 'Active' },
-        ];
-        // Once backend is ready:
-        // const response = await api.get('/labour-rate/list');
-        // return response.data;
+        const response = await api.get('/labour-rate/list');
+        return response.data;
+    } catch (error) {
+        throw error.response?.data || error.message;
+    }
+};
+
+export const getLabourRateById = async (id) => {
+    try {
+        const response = await api.get(`/labour-rate/${id}`);
+        return response.data;
+    } catch (error) {
+        throw error.response?.data || error.message;
+    }
+};
+
+export const createLabourRate = async (data) => {
+    try {
+        const response = await api.post('/labour-rate/create', data);
+        return response.data;
+    } catch (error) {
+        throw error.response?.data || error.message;
+    }
+};
+
+export const updateLabourRate = async (id, data) => {
+    try {
+        const response = await api.put(`/labour-rate/update/${id}`, data);
+        return response.data;
+    } catch (error) {
+        throw error.response?.data || error.message;
+    }
+};
+
+export const deleteLabourRate = async (id) => {
+    try {
+        const response = await api.delete(`/labour-rate/delete/${id}`);
+        return response.data;
     } catch (error) {
         throw error.response?.data || error.message;
     }

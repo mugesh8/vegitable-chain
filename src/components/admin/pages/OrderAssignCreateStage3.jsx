@@ -1037,24 +1037,29 @@ const OrderAssignCreateStage3 = () => {
 
                                             <div className="space-y-2">
                                               <div>
-                                                <label className="block text-xs font-semibold text-gray-700 mb-1">Tape Color</label>
+                                                <label className="block text-xs font-semibold text-gray-700 mb-1">Tape Name</label>
                                                 <select
                                                   className="w-full px-2 py-1.5 border border-gray-300 rounded text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white"
-                                                  value={airportTapeData[airport]?.tapeColor || ''}
+                                                  value={airportTapeData[airport]?.tapeName || ''}
                                                   onChange={(e) => {
+                                                    const selectedName = e.target.value;
+                                                    const selectedTape = tapes.find(t => t.name === selectedName);
+                                                    const tapeColor = selectedTape?.color || '';
+
                                                     setAirportTapeData(prev => ({
                                                       ...prev,
                                                       [airport]: {
                                                         ...prev[airport],
-                                                        tapeColor: e.target.value
+                                                        tapeName: selectedName,
+                                                        tapeColor: tapeColor
                                                       }
                                                     }));
                                                   }}
                                                 >
                                                   <option value="">Select tape...</option>
                                                   {tapes.map(tape => (
-                                                    <option key={tape.iid} value={tape.color}>
-                                                      {tape.color}
+                                                    <option key={tape.iid} value={tape.name}>
+                                                      {tape.name}
                                                     </option>
                                                   ))}
                                                 </select>
@@ -1257,24 +1262,29 @@ const OrderAssignCreateStage3 = () => {
 
                                       <div className="space-y-2">
                                         <div>
-                                          <label className="block text-xs font-semibold text-gray-700 mb-1">Tape Color</label>
+                                          <label className="block text-xs font-semibold text-gray-700 mb-1">Tape Name</label>
                                           <select
                                             className="w-full px-2 py-1.5 border border-gray-300 rounded text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white"
-                                            value={airportTapeData[airport]?.tapeColor || ''}
+                                            value={airportTapeData[airport]?.tapeName || ''}
                                             onChange={(e) => {
+                                              const selectedName = e.target.value;
+                                              const selectedTape = tapes.find(t => t.name === selectedName);
+                                              const tapeColor = selectedTape?.color || '';
+
                                               setAirportTapeData(prev => ({
                                                 ...prev,
                                                 [airport]: {
                                                   ...prev[airport],
-                                                  tapeColor: e.target.value
+                                                  tapeName: selectedName,
+                                                  tapeColor: tapeColor
                                                 }
                                               }));
                                             }}
                                           >
                                             <option value="">Select tape...</option>
                                             {tapes.map(tape => (
-                                              <option key={tape.iid} value={tape.color}>
-                                                {tape.color}
+                                              <option key={tape.iid} value={tape.name}>
+                                                {tape.name}
                                               </option>
                                             ))}
                                           </select>

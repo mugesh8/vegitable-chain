@@ -8,7 +8,8 @@ const AddInventory = ({ onClose, onAdd }) => {
     category: '',
     weight: '',
     unit: '',
-    color: ''
+    color: '',
+    price: ''
   });
 
   const [errors, setErrors] = useState({});
@@ -70,7 +71,8 @@ const AddInventory = ({ onClose, onAdd }) => {
           category: formData.category,
           weight: formData.category === 'Tape' ? null : parseFloat(formData.weight),
           unit: formData.category === 'Tape' ? null : formData.unit,
-          color: formData.category === 'Tape' ? formData.color : null
+          color: formData.category === 'Tape' ? formData.color : null,
+          price: formData.price ? parseFloat(formData.price) : null
         };
 
         await createInventory(itemData);
@@ -238,6 +240,27 @@ const AddInventory = ({ onClose, onAdd }) => {
                 </div>
               </div>
             )}
+
+            {/* Price field for all categories */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Price
+              </label>
+              <input
+                type="number"
+                name="price"
+                value={formData.price}
+                onChange={handleChange}
+                placeholder="Enter price"
+                min="0"
+                step="0.01"
+                className={`w-full px-4 py-2.5 border ${errors.price ? 'border-red-500' : 'border-gray-300'
+                  } rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-sm placeholder-gray-400`}
+              />
+              {errors.price && (
+                <p className="mt-1 text-xs text-red-500">{errors.price}</p>
+              )}
+            </div>
 
           </div>
 

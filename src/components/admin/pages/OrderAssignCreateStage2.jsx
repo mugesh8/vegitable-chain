@@ -43,6 +43,9 @@ const OrderAssignCreateStage2 = () => {
   useEffect(() => {
     const loadData = async () => {
       try {
+        // Local cache for labour rates fetched from API
+        let ratesMap = {};
+
         // Fetch available stock and tapes
         try {
           const [stockResponse, tapesResponse, excessPayResponse, labourRatesResponse] = await Promise.all([
@@ -64,12 +67,20 @@ const OrderAssignCreateStage2 = () => {
             });
             setLabourExcessPay(excessPayMap);
           }
-          if (labourRatesResponse.success) {
-            const ratesMap = {};
-            labourRatesResponse.data.forEach(rate => {
-              ratesMap[rate.labourType] = rate.amount;
-            });
-            setLabourRates(ratesMap);
+          if (labourRatesResponse) {
+            // Handle both mock-array response and { success, data } API style response
+            const labourRatesData = Array.isArray(labourRatesResponse)
+              ? labourRatesResponse
+              : (labourRatesResponse.success ? (labourRatesResponse.data || []) : []);
+
+            if (Array.isArray(labourRatesData)) {
+              labourRatesData.forEach(rate => {
+                if (rate && rate.labourType) {
+                  ratesMap[rate.labourType] = rate.amount;
+                }
+              });
+              setLabourRates(ratesMap);
+            }
           }
         } catch (error) {
           console.error('Error fetching data:', error);
@@ -135,7 +146,8 @@ const OrderAssignCreateStage2 = () => {
           const totals = {};
           presentLabours.forEach(labour => {
             const workType = labour.work_type || 'Normal';
-            const rateAmount = labourRates[workType] || labour.daily_wage || 0;
+            // Use labour rates from API based on work_type only (daily_wage removed from labour table)
+            const rateAmount = ratesMap[workType] || 0;
             wages[labour.full_name] = rateAmount;
             totals[labour.full_name] = rateAmount;
           });
@@ -465,12 +477,17 @@ const OrderAssignCreateStage2 = () => {
         }
       });
 
-      // Generate summary data
+      // Generate summary data (now including wage info per labour)
       const labourAssignments = Object.entries(groupedByLabour).map(([labourName, rows]) => {
         const selectedLabour = labours.find(l => l.full_name === labourName);
         const totalPicked = rows.reduce((sum, r) => sum + (parseFloat(r.pickedQuantity) || 0), 0);
         const totalWastage = rows.reduce((sum, r) => sum + (parseFloat(r.wastage) || 0), 0);
         const totalReuse = rows.reduce((sum, r) => sum + (parseFloat(r.reuse) || 0), 0);
+
+        // Wage details for this labour
+        const labourWage = parseFloat(labourWages[labourName]) || 0;
+        const excessPay = parseFloat(labourExcessPay[selectedLabour?.lid] || 0);
+        const totalAmount = labourWage + excessPay;
 
         return {
           labour: labourName,
@@ -478,6 +495,9 @@ const OrderAssignCreateStage2 = () => {
           totalPicked: parseFloat(totalPicked.toFixed(2)),
           totalWastage: parseFloat(totalWastage.toFixed(2)),
           totalReuse: parseFloat(totalReuse.toFixed(2)),
+          labourWage,
+          excessPay,
+          totalAmount,
           assignments: rows.map(r => ({
             product: r.product,
             entityType: r.entityType,

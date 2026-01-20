@@ -1,61 +1,230 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, Filter, Download, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, Filter, Download } from 'lucide-react';
+import { getAllOrders } from '../../../api/orderApi';
+import { getOrderAssignment } from '../../../api/orderAssignmentApi';
+import { getAllFarmers } from '../../../api/farmerApi';
 
 const PayoutManagement = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('farmer');
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 7;
+
+  const [loading, setLoading] = useState(true);
+  const [payouts, setPayouts] = useState([]); // farmer payouts only
+
+  const formatCurrency = (amount) => {
+    const value = Number.isFinite(amount) ? amount : 0;
+    return `₹${value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+  };
+
+  const cleanForMatching = (name) => {
+    if (!name) return '';
+    // Remove any numeric prefix like "1 - " used in some product names
+    return name.replace(/^\d+\s*-\s*/, '').trim();
+  };
+
+  useEffect(() => {
+    fetchFarmerPayouts();
+  }, []);
+
+  const fetchFarmerPayouts = async () => {
+    try {
+      setLoading(true);
+      const [ordersRes, farmersRes] = await Promise.all([
+        getAllOrders(),
+        getAllFarmers()
+      ]);
+
+      const orders = ordersRes?.data || [];
+      const farmers = farmersRes?.data || [];
+
+      const farmerMap = new Map(
+        farmers.map(f => [String(f.fid), f])
+      );
+
+      const processedPayouts = [];
+
+      const assignmentPromises = orders.map(async (order) => {
+        try {
+          const assignmentRes = await getOrderAssignment(order.oid).catch(() => null);
+          if (!assignmentRes?.data?.product_assignments) return;
+
+          let assignments = [];
+          try {
+            assignments = typeof assignmentRes.data.product_assignments === 'string'
+              ? JSON.parse(assignmentRes.data.product_assignments)
+              : assignmentRes.data.product_assignments;
+          } catch {
+            return;
+          }
+
+          // Get Stage 4 data for final pricing (net weight × price)
+          let stage4ProductRows = [];
+          try {
+            if (assignmentRes.data?.stage4_data) {
+              const stage4Data = typeof assignmentRes.data.stage4_data === 'string'
+                ? JSON.parse(assignmentRes.data.stage4_data)
+                : assignmentRes.data.stage4_data;
+              if (stage4Data?.reviewData?.productRows) {
+                stage4ProductRows = stage4Data.reviewData.productRows;
+              }
+            }
+          } catch (e) {
+            console.error('Error parsing stage4_data for payouts:', e);
+          }
+
+          // Group by farmer only
+          const farmerGroups = {};
+          assignments.forEach(assignment => {
+            if (assignment.entityType !== 'farmer' || !assignment.entityId) return;
+
+            const key = String(assignment.entityId);
+            if (!farmerGroups[key]) {
+              farmerGroups[key] = {
+                farmerId: key,
+                assignments: []
+              };
+            }
+            farmerGroups[key].assignments.push(assignment);
+          });
+
+          Object.values(farmerGroups).forEach(group => {
+            // Enrich assignments with final quantity and price using Stage 4 where needed
+            const enrichedAssignments = group.assignments.map(a => {
+              const cleanAssignmentProduct = cleanForMatching(a.product);
+
+              // Quantity: prefer assignedQty; if missing, fallback to order items/net weight
+              let qty = parseFloat(a.assignedQty) || 0;
+              if (!qty) {
+                const matchingItem = order.items?.find(item => {
+                  const itemProduct = item.product_name || item.product || '';
+                  return cleanForMatching(itemProduct) === cleanAssignmentProduct;
+                });
+                if (matchingItem) {
+                  qty = parseFloat(matchingItem.net_weight) || parseFloat(matchingItem.quantity) || 0;
+                }
+              }
+
+              // Price: prefer assignment.price; if missing, fallback to Stage 4 final price
+              let price = parseFloat(a.price) || 0;
+              if (!price && stage4ProductRows.length > 0) {
+                const stage4Entry = stage4ProductRows.find(s4 => {
+                  const s4Product = cleanForMatching(s4.product || s4.product_name || '');
+                  const s4AssignedTo = s4.assignedTo || s4.assigned_to || '';
+                  return (
+                    s4Product === cleanAssignmentProduct &&
+                    (s4AssignedTo === a.assignedTo || !a.assignedTo)
+                  );
+                });
+                if (stage4Entry) {
+                  price = parseFloat(stage4Entry.price) || 0;
+                  // If qty still zero, use Stage 4 net weight
+                  if (!qty) {
+                    qty =
+                      parseFloat(stage4Entry.net_weight) ||
+                      parseFloat(stage4Entry.quantity) ||
+                      0;
+                  }
+                }
+              }
+
+              return { ...a, assignedQty: qty, price };
+            });
+
+            const totalQty = enrichedAssignments.reduce(
+              (sum, a) => sum + (parseFloat(a.assignedQty) || 0),
+              0
+            );
+            const totalAmount = enrichedAssignments.reduce(
+              (sum, a) => sum + (parseFloat(a.assignedQty) || 0) * (parseFloat(a.price) || 0),
+              0
+            );
+
+            if (totalAmount > 0) {
+              const farmer = farmerMap.get(group.farmerId);
+              processedPayouts.push({
+                id: `${order.oid}_${group.farmerId}`,
+                farmerName: farmer?.farmer_name || 'Unknown Farmer',
+                farmerCode: farmer?.farmer_id || `FID-${group.farmerId}`,
+                lastSupplied: order.order_received_date || order.createdAt,
+                quantityKg: totalQty,
+                amount: totalAmount,
+                status:
+                  order.payment_status === 'paid' || order.payment_status === 'completed'
+                    ? 'Paid'
+                    : 'Pending'
+              });
+            }
+          });
+        } catch (error) {
+          console.error(`Error processing order ${order.oid} for farmer payouts:`, error);
+        }
+      });
+
+      await Promise.all(assignmentPromises);
+
+      // Sort by date newest first
+      processedPayouts.sort((a, b) => new Date(b.lastSupplied) - new Date(a.lastSupplied));
+
+      setPayouts(processedPayouts);
+    } catch (error) {
+      console.error('Error fetching farmer payouts:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const filteredPayouts = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return payouts;
+    return payouts.filter(p =>
+      p.farmerName.toLowerCase().includes(query) ||
+      p.farmerCode.toLowerCase().includes(query) ||
+      String(p.id).toLowerCase().includes(query)
+    );
+  }, [payouts, searchQuery]);
+
+  const totalPages = Math.ceil(filteredPayouts.length / itemsPerPage) || 1;
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const paginatedPayouts = filteredPayouts.slice(startIndex, startIndex + itemsPerPage);
+
+  const summaryStats = useMemo(() => {
+    const totalPayouts = payouts.length;
+    const pending = payouts.filter(p => p.status === 'Pending').length;
+
+    const now = new Date();
+    const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const currentMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+    let paidThisMonthAmount = 0;
+    payouts.forEach(p => {
+      if (p.status === 'Paid') {
+        const d = new Date(p.lastSupplied);
+        if (d >= currentMonthStart && d <= currentMonthEnd) {
+          paidThisMonthAmount += p.amount;
+        }
+      }
+    });
+
+    const totalAmount = payouts.reduce((sum, p) => sum + p.amount, 0);
+    const averagePayout = totalPayouts > 0 ? totalAmount / totalPayouts : 0;
+
+    return {
+      totalPayouts,
+      pending,
+      paidThisMonthAmount,
+      averagePayout
+    };
+  }, [payouts]);
 
   const stats = [
-    { label: 'Total Payouts', value: '86' },
-    { label: 'Pending Payouts', value: '72' },
-    { label: 'Paid This Month', value: '₹12.4 L' },
-    { label: 'Average Payout', value: '₹2.8 L' }
-  ];
-
-  const payouts = [
-    {
-      farmerName: 'Green Fields Farm',
-      lastSupplied: 'Nov 4',
-      vendorId: 'VEN-001',
-      quantity: '450 kg',
-      amount: '₹12,450',
-      paymentMode: 'Bank',
-      status: 'Pending',
-      action: 'Pay'
-    },
-    {
-      farmerName: 'Sunrise Organics',
-      lastSupplied: 'Nov 5',
-      vendorId: 'VEN-015',
-      quantity: '320 kg',
-      amount: '₹8,960',
-      paymentMode: 'Cash',
-      status: 'Paid',
-      action: 'View'
-    },
-    {
-      farmerName: 'Fresh Valley Produce',
-      lastSupplied: 'Nov 3',
-      vendorId: 'VEN-023',
-      quantity: '580 kg',
-      amount: '₹15,950',
-      paymentMode: 'Bank',
-      status: 'Pending',
-      action: 'Pay'
-    },
-    {
-      farmerName: "Nature's Best Farm",
-      lastSupplied: 'Nov 2',
-      vendorId: 'VEN-037',
-      quantity: '275 kg',
-      amount: '₹7,920',
-      paymentMode: 'Cash',
-      status: 'Pending',
-      action: 'Pay'
-    }
+    { label: 'Total Payouts', value: summaryStats.totalPayouts.toString() },
+    { label: 'Pending Payouts', value: summaryStats.pending.toString() },
+    { label: 'Paid This Month', value: formatCurrency(summaryStats.paidThisMonthAmount) },
+    { label: 'Average Payout', value: formatCurrency(summaryStats.averagePayout) }
   ];
 
   const getPaymentModeColor = (mode) => {
@@ -66,8 +235,8 @@ const PayoutManagement = () => {
     return status === 'Paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-yellow-100 text-yellow-700';
   };
 
-  const getActionButton = (action, status) => {
-    if (action === 'Pay') {
+  const getActionButton = (status) => {
+    if (status === 'Pending') {
       return 'bg-emerald-600 hover:bg-emerald-700 text-white';
     }
     return 'bg-gray-200 hover:bg-gray-300 text-gray-700';
@@ -88,6 +257,18 @@ const PayoutManagement = () => {
             }`}
           >
             Farmer Payout
+          </button>
+          <button
+            onClick={() => navigate('/payout-supplier')}
+            className="px-5 py-2.5 rounded-lg font-medium transition-all text-sm bg-white text-gray-600 hover:bg-gray-50 border border-gray-200"
+          >
+            Supplier Payout
+          </button>
+          <button
+            onClick={() => navigate('/payout-thirdparty')}
+            className="px-5 py-2.5 rounded-lg font-medium transition-all text-sm bg-white text-gray-600 hover:bg-gray-50 border border-gray-200"
+          >
+            Third Party Payout
           </button>
           <button
             onClick={() => navigate('/payout-labour')}
@@ -126,7 +307,7 @@ const PayoutManagement = () => {
         {/* Search and Controls */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6">
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-            {/* Search */}
+              {/* Search */}
             <div className="flex-1 relative">
               <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
               <input
@@ -162,9 +343,6 @@ const PayoutManagement = () => {
                     Farmer Name
                   </th>
                   <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">
-                    Vendor ID
-                  </th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">
                     Quantity Supplied
                   </th>
                   <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">
@@ -182,38 +360,72 @@ const PayoutManagement = () => {
                 </tr>
               </thead>
               <tbody>
-                {payouts.map((payout, index) => (
-                  <tr key={index} className={`border-b border-[#D0E0DB] hover:bg-[#F0F4F3] transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-[#F0F4F3]/30'}`}>
-                    <td className="px-6 py-4">
-                      <div className="font-semibold text-[#0D5C4D] text-sm">{payout.farmerName}</div>
-                      <div className="text-xs text-[#6B8782]">Last supplied: {payout.lastSupplied}</div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="text-sm font-medium text-[#0D5C4D]">{payout.vendorId}</div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="text-sm font-medium text-[#0D5C4D]">{payout.quantity}</div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="text-sm font-bold text-[#0D5C4D]">{payout.amount}</div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`inline-block px-4 py-1.5 rounded-full text-xs font-medium ${getPaymentModeColor(payout.paymentMode)}`}>
-                        {payout.paymentMode}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`inline-block px-4 py-1.5 rounded-full text-xs font-medium ${getStatusColor(payout.status)}`}>
-                        {payout.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <button className={`px-6 py-2 rounded-lg text-xs font-semibold transition-colors ${getActionButton(payout.action, payout.status)}`}>
-                        {payout.action}
-                      </button>
+                {loading ? (
+                  <tr>
+                    <td colSpan="6" className="px-6 py-8 text-center text-[#6B8782]">
+                      Loading farmer payouts...
                     </td>
                   </tr>
-                ))}
+                ) : paginatedPayouts.length === 0 ? (
+                  <tr>
+                    <td colSpan="6" className="px-6 py-8 text-center text-[#6B8782]">
+                      No farmer payouts found
+                    </td>
+                  </tr>
+                ) : (
+                  paginatedPayouts.map((payout, index) => (
+                    <tr
+                      key={payout.id}
+                      className={`border-b border-[#D0E0DB] hover:bg-[#F0F4F3] transition-colors ${
+                        index % 2 === 0 ? 'bg-white' : 'bg-[#F0F4F3]/30'
+                      }`}
+                    >
+                      <td className="px-6 py-4">
+                        <div className="font-semibold text-[#0D5C4D] text-sm">{payout.farmerName}</div>
+                        <div className="text-xs text-[#6B8782]">
+                          Last supplied: {payout.lastSupplied ? new Date(payout.lastSupplied).toLocaleDateString('en-IN') : '-'}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm font-medium text-[#0D5C4D]">
+                          {payout.quantityKg.toFixed(2)} kg
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm font-bold text-[#0D5C4D]">
+                          {formatCurrency(payout.amount)}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span
+                          className={`inline-block px-4 py-1.5 rounded-full text-xs font-medium ${getPaymentModeColor(
+                            payout.status === 'Paid' ? 'Bank' : 'Pending'
+                          )}`}
+                        >
+                          {payout.status === 'Paid' ? 'Bank' : 'Pending'}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span
+                          className={`inline-block px-4 py-1.5 rounded-full text-xs font-medium ${getStatusColor(
+                            payout.status
+                          )}`}
+                        >
+                          {payout.status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <button
+                          className={`px-6 py-2 rounded-lg text-xs font-semibold transition-colors ${getActionButton(
+                            payout.status
+                          )}`}
+                        >
+                          {payout.status === 'Paid' ? 'View' : 'Pay'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -223,34 +435,46 @@ const PayoutManagement = () => {
           {/* Pagination */}
           <div className="flex items-center justify-between px-6 py-4 bg-[#F0F4F3] border-t border-[#D0E0DB]">
             <div className="text-sm text-[#6B8782]">
-              Showing 4 of 248 Farmers
+              Showing {filteredPayouts.length === 0 ? 0 : startIndex + 1} to{' '}
+              {Math.min(startIndex + itemsPerPage, filteredPayouts.length)} of {filteredPayouts.length} Farmers
             </div>
             <div className="flex items-center gap-2">
-              <button className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors">
+              <button
+                onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+                disabled={currentPage === 1}
+                className={`px-3 py-2 rounded-lg transition-colors ${
+                  currentPage === 1
+                    ? 'text-gray-400 cursor-not-allowed'
+                    : 'text-[#6B8782] hover:bg-[#D0E0DB]'
+                }`}
+              >
                 &lt;
               </button>
-              <button className="px-4 py-2 rounded-lg font-medium transition-colors bg-[#0D8568] text-white">
-                1
-              </button>
-              <button className="px-4 py-2 rounded-lg font-medium transition-colors text-[#6B8782] hover:bg-[#D0E0DB]">
-                2
-              </button>
-              <button className="px-4 py-2 rounded-lg font-medium transition-colors text-[#6B8782] hover:bg-[#D0E0DB]">
-                3
-              </button>
-              <button className="px-4 py-2 rounded-lg font-medium transition-colors text-[#6B8782] hover:bg-[#D0E0DB]">
-                4
-              </button>
-              <button className="px-4 py-2 rounded-lg font-medium transition-colors text-[#6B8782] hover:bg-[#D0E0DB]">
-                5
-              </button>
-              <button className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors">
-                ...
-              </button>
-              <button className="px-4 py-2 rounded-lg font-medium transition-colors text-[#6B8782] hover:bg-[#D0E0DB]">
-                10
-              </button>
-              <button className="px-3 py-2 text-[#6B8782] hover:bg-[#D0E0DB] rounded-lg transition-colors">
+              {Array.from({ length: totalPages }).map((_, idx) => {
+                const page = idx + 1;
+                return (
+                  <button
+                    key={page}
+                    onClick={() => setCurrentPage(page)}
+                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                      currentPage === page
+                        ? 'bg-[#0D8568] text-white'
+                        : 'text-[#6B8782] hover:bg-[#D0E0DB]'
+                    }`}
+                  >
+                    {page}
+                  </button>
+                );
+              })}
+              <button
+                onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+                disabled={currentPage === totalPages}
+                className={`px-3 py-2 rounded-lg transition-colors ${
+                  currentPage === totalPages
+                    ? 'text-gray-400 cursor-not-allowed'
+                    : 'text-[#6B8782] hover:bg-[#D0E0DB]'
+                }`}
+              >
                 &gt;
               </button>
             </div>

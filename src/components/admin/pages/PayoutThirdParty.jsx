@@ -3,13 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { Search, Filter, Download } from 'lucide-react';
 import { getAllOrders } from '../../../api/orderApi';
 import { getOrderAssignment } from '../../../api/orderAssignmentApi';
-import { getAllLabours } from '../../../api/labourApi';
-import { getAllLabourRates } from '../../../api/labourRateApi';
-import { getAllLabourExcessPay } from '../../../api/labourExcessPayApi';
+import { getAllThirdParties } from '../../../api/thirdPartyApi';
 
-const LabourPayoutManagement = () => {
+const PayoutThirdParty = () => {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('labour');
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 7;
@@ -28,125 +25,147 @@ const LabourPayoutManagement = () => {
   };
 
   useEffect(() => {
-    fetchLabourPayouts();
+    fetchThirdPartyPayouts();
   }, []);
 
-  const fetchLabourPayouts = async () => {
+  const fetchThirdPartyPayouts = async () => {
     try {
       setLoading(true);
-
-      const [ordersRes, laboursRes, labourRatesRes, excessPayRes] = await Promise.all([
+      const [ordersRes, thirdRes] = await Promise.all([
         getAllOrders(),
-        getAllLabours(1, 1000),
-        getAllLabourRates().catch(() => []),
-        getAllLabourExcessPay().catch(() => ({ data: [] }))
+        getAllThirdParties()
       ]);
 
       const orders = ordersRes?.data || [];
-      const labours = laboursRes?.data || laboursRes?.labours || [];
-      const labourRates = Array.isArray(labourRatesRes) ? labourRatesRes : (labourRatesRes?.data || []);
-      const excessPays = excessPayRes?.data || [];
+      const thirdParties = thirdRes?.data || [];
 
-      const labourMap = new Map(
-        labours.map(l => [String(l.lid), l])
+      const thirdMap = new Map(
+        thirdParties.map(t => [String(t.tpid), t])
       );
 
-      const ratesMap = {};
-      labourRates.forEach(rate => {
-        if (rate.status === 'Active') {
-          ratesMap[rate.labourType] = parseFloat(rate.amount) || 0;
-        }
-      });
-
-      const excessPayMap = {};
-      excessPays.forEach(pay => {
-        excessPayMap[String(pay.labour_id)] = parseFloat(pay.amount) || 0;
-      });
-
-      // Aggregate wages per labour from Stage 2 summary (labourPrices)
-      const wagesByLabourId = {};
+      const processedPayouts = [];
 
       const assignmentPromises = orders.map(async (order) => {
         try {
           const assignmentRes = await getOrderAssignment(order.oid).catch(() => null);
-          if (!assignmentRes?.data?.stage2_summary_data) return;
+          if (!assignmentRes?.data?.product_assignments) return;
 
-          let summary;
+          let assignments = [];
           try {
-            summary = typeof assignmentRes.data.stage2_summary_data === 'string'
-              ? JSON.parse(assignmentRes.data.stage2_summary_data)
-              : assignmentRes.data.stage2_summary_data;
+            assignments = typeof assignmentRes.data.product_assignments === 'string'
+              ? JSON.parse(assignmentRes.data.product_assignments)
+              : assignmentRes.data.product_assignments;
           } catch {
             return;
           }
 
-          const labourPrices = summary.labourPrices || [];
-          labourPrices.forEach(lp => {
-            const labourId = lp.labourId;
-            const labourName = lp.labourName || lp.labour;
-            if (!labourId && !labourName) return;
-
-            const idKey = labourId ? String(labourId) : null;
-            const wage =
-              parseFloat(lp.totalAmount ?? lp.labourWage ?? 0) || 0;
-
-            if (!wage) return;
-
-            const key = idKey || labourName;
-            if (!wagesByLabourId[key]) {
-              wagesByLabourId[key] = 0;
+          // Stage 4 data for final pricing
+          let stage4ProductRows = [];
+          try {
+            if (assignmentRes.data?.stage4_data) {
+              const stage4Data = typeof assignmentRes.data.stage4_data === 'string'
+                ? JSON.parse(assignmentRes.data.stage4_data)
+                : assignmentRes.data.stage4_data;
+              if (stage4Data?.reviewData?.productRows) {
+                stage4ProductRows = stage4Data.reviewData.productRows;
+              }
             }
-            wagesByLabourId[key] += wage;
+          } catch (e) {
+            console.error('Error parsing stage4_data for third-party payouts:', e);
+          }
+
+          // Group assignments by third party
+          const thirdGroups = {};
+          assignments.forEach(a => {
+            if (a.entityType !== 'thirdParty' || !a.entityId) return;
+            const key = String(a.entityId);
+            if (!thirdGroups[key]) {
+              thirdGroups[key] = {
+                thirdId: key,
+                assignments: []
+              };
+            }
+            thirdGroups[key].assignments.push(a);
+          });
+
+          Object.values(thirdGroups).forEach(group => {
+            const enrichedAssignments = group.assignments.map(a => {
+              const cleanAssignmentProduct = cleanForMatching(a.product);
+
+              // Quantity
+              let qty = parseFloat(a.assignedQty) || 0;
+              if (!qty) {
+                const matchingItem = order.items?.find(item => {
+                  const itemProduct = item.product_name || item.product || '';
+                  return cleanForMatching(itemProduct) === cleanAssignmentProduct;
+                });
+                if (matchingItem) {
+                  qty = parseFloat(matchingItem.net_weight) || parseFloat(matchingItem.quantity) || 0;
+                }
+              }
+
+              // Price
+              let price = parseFloat(a.price) || 0;
+              if (!price && stage4ProductRows.length > 0) {
+                const stage4Entry = stage4ProductRows.find(s4 => {
+                  const s4Product = cleanForMatching(s4.product || s4.product_name || '');
+                  const s4AssignedTo = s4.assignedTo || s4.assigned_to || '';
+                  return (
+                    s4Product === cleanAssignmentProduct &&
+                    (s4AssignedTo === a.assignedTo || !a.assignedTo)
+                  );
+                });
+                if (stage4Entry) {
+                  price = parseFloat(stage4Entry.price) || 0;
+                  if (!qty) {
+                    qty =
+                      parseFloat(stage4Entry.net_weight) ||
+                      parseFloat(stage4Entry.quantity) ||
+                      0;
+                  }
+                }
+              }
+
+              return { ...a, assignedQty: qty, price };
+            });
+
+            const totalQty = enrichedAssignments.reduce(
+              (sum, a) => sum + (parseFloat(a.assignedQty) || 0),
+              0
+            );
+            const totalAmount = enrichedAssignments.reduce(
+              (sum, a) => sum + (parseFloat(a.assignedQty) || 0) * (parseFloat(a.price) || 0),
+              0
+            );
+
+            if (totalAmount > 0) {
+              const third = thirdMap.get(group.thirdId);
+              processedPayouts.push({
+                id: `${order.oid}_${group.thirdId}`,
+                thirdName: third?.third_party_name || 'Unknown Third Party',
+                thirdCode: third?.third_party_id || `TP-${group.thirdId}`,
+                lastSupplied: order.order_received_date || order.createdAt,
+                quantityKg: totalQty,
+                amount: totalAmount,
+                status:
+                  order.payment_status === 'paid' || order.payment_status === 'completed'
+                    ? 'Paid'
+                    : 'Pending'
+              });
+            }
           });
         } catch (error) {
-          console.error(`Error processing order ${order.oid} for labour payouts:`, error);
+          console.error(`Error processing order ${order.oid} for third-party payouts:`, error);
         }
       });
 
       await Promise.all(assignmentPromises);
 
-      // Build final payout rows
-      const processedPayouts = Object.entries(wagesByLabourId).map(([key, totalWage]) => {
-        // Try to resolve by labourId first
-        let labour = labourMap.get(key);
-        if (!labour) {
-          // Fallback: match by name
-          const normalizedName = key.toLowerCase();
-          labour = labours.find(l =>
-            (l.full_name || l.name || '').trim().toLowerCase() === normalizedName
-          );
-        }
-
-        const labourId = labour ? String(labour.lid) : key;
-        const workType = labour?.work_type || 'Normal';
-        const rate =
-          ratesMap[workType] ||
-          parseFloat(labour?.daily_wage) ||
-          0;
-
-        const daysWorked = rate > 0 ? totalWage / rate : 0;
-        const roundedDays = Math.round(daysWorked);
-
-        const excess = excessPayMap[labourId] || 0;
-
-        return {
-          id: labourId,
-          labourName: labour?.full_name || labour?.name || key,
-          labourCode: labour?.labour_id || `LID-${labourId}`,
-          daysWorked: roundedDays,
-          wageRate: rate,
-          advance: excess,
-          netAmount: totalWage,
-          status: 'Pending' // until an actual payout is recorded
-        };
-      });
-
-      // Sort by highest net amount
-      processedPayouts.sort((a, b) => b.netAmount - a.netAmount);
+      processedPayouts.sort((a, b) => new Date(b.lastSupplied) - new Date(a.lastSupplied));
 
       setPayouts(processedPayouts);
     } catch (error) {
-      console.error('Error fetching labour payouts:', error);
+      console.error('Error fetching third-party payouts:', error);
     } finally {
       setLoading(false);
     }
@@ -156,8 +175,8 @@ const LabourPayoutManagement = () => {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return payouts;
     return payouts.filter(p =>
-      p.labourName.toLowerCase().includes(query) ||
-      p.labourCode.toLowerCase().includes(query)
+      p.thirdName.toLowerCase().includes(query) ||
+      p.thirdCode.toLowerCase().includes(query)
     );
   }, [payouts, searchQuery]);
 
@@ -167,45 +186,52 @@ const LabourPayoutManagement = () => {
 
   const summaryStats = useMemo(() => {
     const totalPayouts = payouts.length;
-    const totalAmount = payouts.reduce((sum, p) => sum + p.netAmount, 0);
-    const averageDailyWage =
-      payouts.length > 0
-        ? payouts.reduce((sum, p) => sum + p.wageRate, 0) / payouts.length
-        : 0;
+    const pending = payouts.filter(p => p.status === 'Pending').length;
 
-    // Here we just treat all as "this month" for now; can be extended with date filters
-    const paidThisMonth = totalAmount;
+    const now = new Date();
+    const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const currentMonthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
 
-    const activeLabour = payouts.length;
+    let paidThisMonthAmount = 0;
+    payouts.forEach(p => {
+      if (p.status === 'Paid') {
+        const d = new Date(p.lastSupplied);
+        if (d >= currentMonthStart && d <= currentMonthEnd) {
+          paidThisMonthAmount += p.amount;
+        }
+      }
+    });
+
+    const totalAmount = payouts.reduce((sum, p) => sum + p.amount, 0);
+    const averagePayout = totalPayouts > 0 ? totalAmount / totalPayouts : 0;
 
     return {
       totalPayouts,
-      averageDailyWage,
-      paidThisMonth,
-      activeLabour
+      pending,
+      paidThisMonthAmount,
+      averagePayout
     };
   }, [payouts]);
 
   const stats = [
-    { label: 'Total Payouts', value: summaryStats.totalPayouts.toString(), change: '' },
-    { label: 'Average Daily Wage', value: formatCurrency(summaryStats.averageDailyWage), change: '' },
-    { label: 'Total Wages (This Period)', value: formatCurrency(summaryStats.paidThisMonth), change: '' },
-    { label: 'Total Active Labour', value: summaryStats.activeLabour.toString(), change: '' }
+    { label: 'Total Payouts', value: summaryStats.totalPayouts.toString() },
+    { label: 'Pending Payouts', value: summaryStats.pending.toString() },
+    { label: 'Paid This Month', value: formatCurrency(summaryStats.paidThisMonthAmount) },
+    { label: 'Average Payout', value: formatCurrency(summaryStats.averagePayout) }
   ];
 
   const getStatusColor = (status) => {
     return status === 'Paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-yellow-100 text-yellow-700';
   };
 
-  const getActionButton = (status) => {
-    if (status === 'Pending') {
-      return 'bg-emerald-600 hover:bg-emerald-700 text-white';
-    }
-    return 'bg-gray-200 hover:bg-gray-300 text-gray-700';
-  };
+  const getActionButton = (status) =>
+    status === 'Paid'
+      ? 'bg-gray-200 hover:bg-gray-300 text-gray-700'
+      : 'bg-emerald-600 hover:bg-emerald-700 text-white';
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
+    <div className="min-h-screen bg-gradient-to-br from-emerald-50 to-teal-50 p-4 sm:p-6 lg:p-8">
+      <div className="max-w-7xl mx-auto">
         {/* Tabs */}
         <div className="flex flex-wrap gap-2 mb-6">
           <button
@@ -222,13 +248,13 @@ const LabourPayoutManagement = () => {
           </button>
           <button
             onClick={() => navigate('/payout-thirdparty')}
-            className="px-5 py-2.5 rounded-lg font-medium transition-all text-sm bg-white text-gray-600 hover:bg-gray-50 border border-gray-200"
+            className="px-5 py-2.5 rounded-lg font-medium transition-all text-sm bg-[#0D7C66] text-white shadow-md"
           >
             Third Party Payout
           </button>
           <button
-            onClick={() => setActiveTab('labour')}
-            className="px-5 py-2.5 rounded-lg font-medium transition-all text-sm bg-[#0D7C66] text-white shadow-md"
+            onClick={() => navigate('/payout-labour')}
+            className="px-5 py-2.5 rounded-lg font-medium transition-all text-sm bg-white text-gray-600 hover:bg-gray-50 border border-gray-200"
           >
             Labour Payout
           </button>
@@ -243,8 +269,8 @@ const LabourPayoutManagement = () => {
         {/* Statistics Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           {stats.map((stat, index) => (
-            <div 
-              key={index} 
+            <div
+              key={index}
               className={`${
                 index === 0 ? 'bg-gradient-to-r from-[#D1FAE5] to-[#A7F3D0]' :
                 index === 1 ? 'bg-gradient-to-r from-[#6EE7B7] to-[#34D399]' :
@@ -255,27 +281,20 @@ const LabourPayoutManagement = () => {
               }`}
             >
               <div className="text-sm font-medium mb-2 opacity-90">{stat.label}</div>
-              <div className="text-4xl font-bold mb-2">{stat.value}</div>
-              <div className={`inline-block px-3 py-1 rounded-full text-xs font-medium ${
-                index === 2 || index === 3 
-                  ? 'bg-white/20 text-white' 
-                  : 'bg-white/60 text-[#0D5C4D]'
-              }`}>
-                {stat.change}
-              </div>
+              <div className="text-4xl font-bold">{stat.value}</div>
             </div>
           ))}
         </div>
 
         {/* Search and Controls */}
-        <div className="bg-white rounded-xl shadow-sm border border-[#D0E0DB] p-4 mb-6">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6">
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
             {/* Search */}
             <div className="flex-1 relative">
               <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search by order ID, farmer name..."
+                placeholder="Search by order ID, third party name..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-12 pr-4 py-3 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent text-sm bg-gray-50"
@@ -296,23 +315,23 @@ const LabourPayoutManagement = () => {
           </div>
         </div>
 
-        {/* Labour Payouts Table */}
+        {/* Payouts Table */}
         <div className="bg-white rounded-2xl overflow-hidden border border-[#D0E0DB]">
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
-                <tr className="bg-[#D4F4E8]">
+                <tr className="bg-[#D4F4F8]">
                   <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">
-                    Labour Name
+                    Third Party Name
                   </th>
                   <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">
-                    Days Worked
+                    Third Party ID
                   </th>
                   <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">
-                    Wage Rate
+                    Quantity Supplied (kg)
                   </th>
                   <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">
-                    Net Amount
+                    Amount
                   </th>
                   <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">
                     Status
@@ -325,14 +344,14 @@ const LabourPayoutManagement = () => {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan="6" className="px-6 py-8 text-center text-[#6B8782]">
-                      Loading labour payouts...
+                    <td colSpan="5" className="px-6 py-8 text-center text-[#6B8782]">
+                      Loading third-party payouts...
                     </td>
                   </tr>
                 ) : paginatedPayouts.length === 0 ? (
                   <tr>
-                    <td colSpan="6" className="px-6 py-8 text-center text-[#6B8782]">
-                      No labour payouts found
+                    <td colSpan="5" className="px-6 py-8 text-center text-[#6B8782]">
+                      No third-party payouts found
                     </td>
                   </tr>
                 ) : (
@@ -344,39 +363,26 @@ const LabourPayoutManagement = () => {
                       }`}
                     >
                       <td className="px-6 py-4">
-                        <div className="font-semibold text-[#0D5C4D] text-sm">{payout.labourName}</div>
-                        <div className="text-xs text-[#6B8782]">{payout.labourCode}</div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="text-sm font-medium text-[#0D5C4D]">
-                          {payout.daysWorked} days
+                        <div className="font-semibold text-[#0D5C4D] text-sm">{payout.thirdName}</div>
+                        <div className="text-xs text-[#6B8782]">
+                          Last supplied: {payout.lastSupplied ? new Date(payout.lastSupplied).toLocaleDateString('en-IN') : '-'}
                         </div>
                       </td>
                       <td className="px-6 py-4">
-                        <div className="text-sm font-medium text-[#0D5C4D]">
-                          {formatCurrency(payout.wageRate)}/day
-                        </div>
+                        <div className="text-sm font-medium text-[#0D5C4D]">{payout.thirdCode}</div>
                       </td>
                       <td className="px-6 py-4">
-                        <div
-                          className={`text-sm font-bold ${
-                            payout.advance === 0 ? 'text-[#0D5C4D]' : 'text-red-600'
-                          }`}
-                        >
-                          {payout.advance === 0 ? '₹0' : `- ${formatCurrency(payout.advance)}`}
+                        <div className="text-sm font-medium text-[#0D5C4D]">
+                          {payout.quantityKg.toFixed(2)}
                         </div>
                       </td>
                       <td className="px-6 py-4">
                         <div className="text-sm font-bold text-[#0D5C4D]">
-                          {formatCurrency(payout.netAmount)}
+                          {formatCurrency(payout.amount)}
                         </div>
                       </td>
                       <td className="px-6 py-4">
-                        <span
-                          className={`inline-block px-4 py-1.5 rounded-full text-xs font-medium ${getStatusColor(
-                            payout.status
-                          )}`}
-                        >
+                        <span className={`inline-block px-4 py-1.5 rounded-full text-xs font-medium ${getStatusColor(payout.status)}`}>
                           {payout.status}
                         </span>
                       </td>
@@ -396,13 +402,11 @@ const LabourPayoutManagement = () => {
             </table>
           </div>
 
-
-
           {/* Pagination */}
           <div className="flex items-center justify-between px-6 py-4 bg-[#F0F4F3] border-t border-[#D0E0DB]">
             <div className="text-sm text-[#6B8782]">
               Showing {filteredPayouts.length === 0 ? 0 : startIndex + 1} to{' '}
-              {Math.min(startIndex + itemsPerPage, filteredPayouts.length)} of {filteredPayouts.length} Labour
+              {Math.min(startIndex + itemsPerPage, filteredPayouts.length)} of {filteredPayouts.length} Third Parties
             </div>
             <div className="flex items-center gap-2">
               <button
@@ -446,8 +450,9 @@ const LabourPayoutManagement = () => {
             </div>
           </div>
         </div>
+      </div>
     </div>
   );
 };
 
-export default LabourPayoutManagement;
+export default PayoutThirdParty;

@@ -287,6 +287,9 @@ const PackingInventory = () => {
                     Weight/Unit
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                    Price
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                     Total Stock Quantity
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
@@ -301,6 +304,9 @@ const PackingInventory = () => {
                     <td className="px-6 py-4 text-sm text-gray-600">{item.category}</td>
                     <td className="px-6 py-4 text-sm text-gray-600">
                       {item.category === 'Tape' ? item.color : `${item.weight} ${item.unit}`}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-600">
+                      {item.price ? `₹${parseFloat(item.price).toFixed(2)}` : '-'}
                     </td>
                     <td className="px-6 py-4 text-sm">
                       <span className="font-semibold text-emerald-600">{item.quantity || 0}</span>

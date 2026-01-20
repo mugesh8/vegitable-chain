@@ -10,13 +10,6 @@ const DriverDetailsPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('details');
-  const [kmFormData, setKmFormData] = useState({
-    date: new Date().toISOString().split('T')[0],
-    driverName: '',
-    vehicleNumber: '',
-    startKm: '',
-    endKm: ''
-  });
 
   useEffect(() => {
     const fetchDriver = async () => {
@@ -59,12 +52,6 @@ const DriverDetailsPage = () => {
             rating: driver.rating || '0'
           }
         });
-        // Set vehicle number and driver name in KM form
-        setKmFormData(prev => ({
-          ...prev,
-          driverName: driver.driver_name || driver.name || '',
-          vehicleNumber: driver.vehicle_number || ''
-        }));
       } catch (err) {
         setError('Failed to load driver details');
       } finally {
@@ -110,11 +97,8 @@ const DriverDetailsPage = () => {
             Driver Details
           </button>
           <button
-            onClick={() => setActiveTab('km')}
-            className={`px-6 py-2.5 rounded-lg font-medium transition-all text-sm whitespace-nowrap ${activeTab === 'km'
-              ? 'bg-[#0D7C66] text-white shadow-md'
-              : 'bg-white text-gray-600 hover:bg-gray-50 border border-gray-200'
-              }`}
+            onClick={() => navigate('/start-end-km-management', { state: { driverId: id } })}
+            className="px-6 py-2.5 rounded-lg font-medium transition-all text-sm whitespace-nowrap bg-white text-gray-600 hover:bg-gray-50 border border-gray-200"
           >
             Start KM/End KM
           </button>
@@ -354,134 +338,6 @@ const DriverDetailsPage = () => {
           </div>
         )}
 
-        {/* Start KM/End KM Tab */}
-        {activeTab === 'km' && (
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 sm:p-8">
-            <h2 className="text-2xl font-bold text-gray-900 mb-6">Start KM / End KM</h2>
-
-            <form onSubmit={(e) => {
-              e.preventDefault();
-              console.log('KM Form Data:', kmFormData);
-              // Add your API call here to save the KM data
-              alert('KM data saved successfully!');
-            }} className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Date Field */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Date <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="date"
-                    required
-                    value={kmFormData.date}
-                    onChange={(e) => setKmFormData({ ...kmFormData, date: e.target.value })}
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D8568] focus:border-transparent text-sm"
-                  />
-                </div>
-
-                {/* Driver Name Field */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Driver Name <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={kmFormData.driverName}
-                    onChange={(e) => setKmFormData({ ...kmFormData, driverName: e.target.value })}
-                    placeholder="Enter driver name"
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D8568] focus:border-transparent text-sm"
-                  />
-                </div>
-
-                {/* Vehicle Number Field */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Vehicle Number <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={kmFormData.vehicleNumber}
-                    onChange={(e) => setKmFormData({ ...kmFormData, vehicleNumber: e.target.value })}
-                    placeholder="Enter vehicle number"
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D8568] focus:border-transparent text-sm"
-                  />
-                </div>
-
-                {/* Start KM Field */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Start KM <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    min="0"
-                    step="0.1"
-                    value={kmFormData.startKm}
-                    onChange={(e) => setKmFormData({ ...kmFormData, startKm: e.target.value })}
-                    placeholder="Enter start kilometer"
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D8568] focus:border-transparent text-sm"
-                  />
-                </div>
-
-                {/* End KM Field */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    End KM <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    min="0"
-                    step="0.1"
-                    value={kmFormData.endKm}
-                    onChange={(e) => setKmFormData({ ...kmFormData, endKm: e.target.value })}
-                    placeholder="Enter end kilometer"
-                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0D8568] focus:border-transparent text-sm"
-                  />
-                </div>
-              </div>
-
-              {/* Total KM Display */}
-              {kmFormData.startKm && kmFormData.endKm && parseFloat(kmFormData.endKm) >= parseFloat(kmFormData.startKm) && (
-                <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium text-emerald-900">Total Distance Traveled:</span>
-                    <span className="text-lg font-bold text-emerald-700">
-                      {(parseFloat(kmFormData.endKm) - parseFloat(kmFormData.startKm)).toFixed(1)} KM
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {/* Submit Button */}
-              <div className="flex gap-4 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setKmFormData({
-                    date: new Date().toISOString().split('T')[0],
-                    driverName: driverInfo?.name || '',
-                    vehicleNumber: driverInfo?.vehicle?.number || '',
-                    startKm: '',
-                    endKm: ''
-                  })}
-                  className="px-6 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium transition-colors"
-                >
-                  Reset
-                </button>
-                <button
-                  type="submit"
-                  className="px-6 py-2.5 bg-[#0D7C66] text-white rounded-lg hover:bg-[#0a6354] font-medium transition-colors shadow-md"
-                >
-                  Save KM Data
-                </button>
-              </div>
-            </form>
-          </div>
-        )}
       </div>
     </div >
   );

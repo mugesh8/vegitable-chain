@@ -95,6 +95,18 @@ const DriverPayoutManagement = () => {
             Farmer Payout
           </button>
           <button
+            onClick={() => navigate('/payout-supplier')}
+            className="px-5 py-2.5 rounded-lg font-medium transition-all text-sm bg-white text-gray-600 hover:bg-gray-50 border border-gray-200"
+          >
+            Supplier Payout
+          </button>
+          <button
+            onClick={() => navigate('/payout-thirdparty')}
+            className="px-5 py-2.5 rounded-lg font-medium transition-all text-sm bg-white text-gray-600 hover:bg-gray-50 border border-gray-200"
+          >
+            Third Party Payout
+          </button>
+          <button
             onClick={() => navigate('/payout-labour')}
             className="px-5 py-2.5 rounded-lg font-medium transition-all text-sm bg-white text-gray-600 hover:bg-gray-50 border border-gray-200"
           >

@@ -1,63 +1,125 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import ConfirmDeleteModal from '../../common/ConfirmDeleteModal';
+import { getAllLabourRates, createLabourRate, updateLabourRate, deleteLabourRate } from '../../../api/labourRateApi';
 
 const LabourRateManagement = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchTerm, setSearchTerm] = useState('');
-  const [currentPage, setCurrentPage] = useState(1);
+  const [currentPage] = useState(1);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedRate, setSelectedRate] = useState(null);
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, id: null, name: '' });
 
-  const [labourRates, setLabourRates] = useState([
-    { id: 1, labourType: 'Normal', amount: 500, status: 'Active' },
-    { id: 2, labourType: 'Medium', amount: 750, status: 'Active' },
-    { id: 3, labourType: 'Heavy', amount: 1000, status: 'Active' },
-  ]);
+  const [labourRates, setLabourRates] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   const itemsPerPage = 7;
   const [formData, setFormData] = useState({ labourType: 'Normal', amount: '', status: 'Active' });
 
+  useEffect(() => {
+    fetchLabourRates();
+  }, []);
+
+  const fetchLabourRates = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await getAllLabourRates();
+      const rates = Array.isArray(response) ? response : (response?.data || []);
+      setLabourRates(rates);
+    } catch (error) {
+      console.error('Error fetching labour rates:', error);
+      setError('Failed to load labour rates');
+      // Set empty array on error
+      setLabourRates([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleEdit = (rate) => {
     setSelectedRate(rate);
-    setFormData({ labourType: rate.labourType, amount: rate.amount, status: rate.status });
+    setFormData({ labourType: rate.labourType, amount: rate.amount.toString(), status: rate.status });
     setIsEditModalOpen(true);
   };
 
-  const handleDelete = (id, labourType) => {
-    setDeleteModal({ isOpen: true, id, name: labourType });
-  };
-
-  const confirmDelete = () => {
-    setLabourRates(labourRates.filter(rate => rate.id !== deleteModal.id));
-    setDeleteModal({ isOpen: false, id: null, name: '' });
-  };
-
-  const handleAddSubmit = (e) => {
-    e.preventDefault();
-    const newRate = { id: labourRates.length + 1, ...formData, amount: parseFloat(formData.amount) };
-    setLabourRates([...labourRates, newRate]);
-    setIsAddModalOpen(false);
-    setFormData({ labourType: 'Normal', amount: '', status: 'Active' });
-  };
-
-  const handleEditSubmit = (e) => {
-    e.preventDefault();
-    setLabourRates(labourRates.map(rate => 
-      rate.id === selectedRate.id ? { ...rate, ...formData, amount: parseFloat(formData.amount) } : rate
-    ));
+  const handleCloseEditModal = () => {
     setIsEditModalOpen(false);
+    setSelectedRate(null);
     setFormData({ labourType: 'Normal', amount: '', status: 'Active' });
+  };
+
+  const handleDelete = (rate, labourType) => {
+    // Try multiple possible ID field names
+    const rateId = rate.lrid || rate._id || rate.id;
+    setDeleteModal({ isOpen: true, id: rateId, name: labourType });
+  };
+
+  const confirmDelete = async () => {
+    try {
+      await deleteLabourRate(deleteModal.id);
+      await fetchLabourRates();
+      setDeleteModal({ isOpen: false, id: null, name: '' });
+    } catch (error) {
+      console.error('Error deleting labour rate:', error);
+      alert(error.message || 'Failed to delete labour rate. Please try again.');
+    }
+  };
+
+  const handleAddSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const data = {
+        labourType: formData.labourType,
+        amount: parseFloat(formData.amount),
+        status: formData.status
+      };
+      await createLabourRate(data);
+      await fetchLabourRates();
+      setIsAddModalOpen(false);
+      setFormData({ labourType: 'Normal', amount: '', status: 'Active' });
+    } catch (error) {
+      console.error('Error creating labour rate:', error);
+      alert(error.message || 'Failed to create labour rate. Please try again.');
+    }
+  };
+
+  const handleEditSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      const data = {
+        labourType: formData.labourType,
+        amount: parseFloat(formData.amount),
+        status: formData.status
+      };
+      // Try multiple possible ID field names
+      const rateId = selectedRate.lrid || selectedRate._id || selectedRate.id;
+      if (!rateId) {
+        console.error('Rate object:', selectedRate);
+        alert('Error: Rate ID not found. Please check the console for details and refresh the page.');
+        return;
+      }
+      await updateLabourRate(rateId, data);
+      await fetchLabourRates();
+      setIsEditModalOpen(false);
+      setSelectedRate(null);
+      setFormData({ labourType: 'Normal', amount: '', status: 'Active' });
+    } catch (error) {
+      console.error('Error updating labour rate:', error);
+      const errorMessage = error?.response?.data?.message || error?.message || 'Failed to update labour rate. Please try again.';
+      alert(errorMessage);
+    }
   };
 
   const filteredRates = labourRates.filter(rate =>
     rate.labourType.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const totalPages = Math.ceil(filteredRates.length / itemsPerPage);
+  const _totalPages = Math.ceil(filteredRates.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const paginatedRates = filteredRates.slice(startIndex, startIndex + itemsPerPage);
 
@@ -102,19 +164,42 @@ const LabourRateManagement = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {paginatedRates.map((rate) => (
-                  <tr key={rate.id} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4 text-sm text-gray-900">{rate.labourType}</td>
-                    <td className="px-6 py-4 text-sm text-gray-900">₹{rate.amount}</td>
-                    <td className="px-6 py-4 text-sm"><span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${rate.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-yellow-100 text-yellow-700'}`}>{rate.status}</span></td>
-                    <td className="px-6 py-4 text-sm">
-                      <div className="flex gap-2">
-                        <button onClick={() => handleEdit(rate)} className="px-4 py-1.5 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium">Edit</button>
-                        <button onClick={() => handleDelete(rate.id, rate.labourType)} className="px-4 py-1.5 text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors text-sm font-medium">Delete</button>
-                      </div>
+                {loading ? (
+                  <tr>
+                    <td colSpan="4" className="px-6 py-8 text-center text-gray-500">
+                      Loading labour rates...
                     </td>
                   </tr>
-                ))}
+                ) : error ? (
+                  <tr>
+                    <td colSpan="4" className="px-6 py-8 text-center text-red-500">
+                      {error}
+                    </td>
+                  </tr>
+                ) : paginatedRates.length === 0 ? (
+                  <tr>
+                    <td colSpan="4" className="px-6 py-8 text-center text-gray-500">
+                      No labour rates found
+                    </td>
+                  </tr>
+                ) : (
+                  paginatedRates.map((rate) => {
+                    const rateId = rate.lrid || rate._id || rate.id;
+                    return (
+                      <tr key={rateId || rate.labourType} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-6 py-4 text-sm text-gray-900">{rate.labourType}</td>
+                        <td className="px-6 py-4 text-sm text-gray-900">₹{rate.amount}</td>
+                        <td className="px-6 py-4 text-sm"><span className={`inline-flex px-3 py-1 rounded-full text-xs font-medium ${rate.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : 'bg-yellow-100 text-yellow-700'}`}>{rate.status}</span></td>
+                        <td className="px-6 py-4 text-sm">
+                          <div className="flex gap-2">
+                            <button onClick={() => handleEdit(rate)} className="px-4 py-1.5 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium">Edit</button>
+                            <button onClick={() => handleDelete(rate, rate.labourType)} className="px-4 py-1.5 text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition-colors text-sm font-medium">Delete</button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>
@@ -173,7 +258,7 @@ const LabourRateManagement = () => {
           <div className="bg-white rounded-lg shadow-xl w-full max-w-md">
             <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
               <h2 className="text-xl font-semibold text-gray-900">Edit Labour Rate</h2>
-              <button onClick={() => setIsEditModalOpen(false)} className="text-gray-400 hover:text-gray-600"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
+              <button onClick={handleCloseEditModal} className="text-gray-400 hover:text-gray-600"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
             </div>
             <form onSubmit={handleEditSubmit} className="p-6 space-y-4">
               <div>
@@ -196,7 +281,7 @@ const LabourRateManagement = () => {
                 </select>
               </div>
               <div className="flex gap-3 pt-4">
-                <button type="button" onClick={() => setIsEditModalOpen(false)} className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium">Cancel</button>
+                <button type="button" onClick={handleCloseEditModal} className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium">Cancel</button>
                 <button type="submit" className="flex-1 px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 font-medium">Update Rate</button>
               </div>
             </form>

@@ -1417,7 +1417,7 @@ const ReportOrderView = () => {
                                             const netWeight = grossWeight - tareWeight;
 
                                             const totalExpPerKg = netWeight > 0 ? ((vegExpenses + totalExpenses) / netWeight).toFixed(0) : 0;
-                                            const driverNameWithNum = `${driverName} ${data.driverInfo?.vehicle_number || ''}`.trim();
+                                            const driverNameWithNum = `${(driverName || '').toString().toUpperCase()}`.trim();
 
                                             // Simple Table UI (1st PDF Style)
                                             return (
@@ -1520,17 +1520,14 @@ const ReportOrderView = () => {
                                                                         </tr>
                                                                     );
                                                                 })}
+                                                                {/* Driver wage shown as "Driver Name + PICKUP" */}
                                                                 <tr className="border-b border-gray-200">
-                                                                    <td className="p-1 pl-4" colSpan="3">PICKUP</td>
-                                                                    <td className="p-1 text-right pr-2">{pickupCost}</td>
+                                                                    <td className="p-1 pl-4" colSpan="3">{driverNameWithNum} PICKUP</td>
+                                                                    <td className="p-1 text-right pr-2">{driverWage}</td>
                                                                 </tr>
                                                                 <tr className="border-b border-gray-200">
                                                                     <td className="p-1 pl-4" colSpan="3">TAPE & PAPER</td>
                                                                     <td className="p-1 text-right pr-2">{tapeCost}</td>
-                                                                </tr>
-                                                                <tr className="border-b border-black">
-                                                                    <td className="p-1 pl-4" colSpan="3">DRIVER WAGE</td>
-                                                                    <td className="p-1 text-right pr-2">{driverWage}</td>
                                                                 </tr>
 
                                                                 {/* Grand Totals */}

@@ -107,6 +107,7 @@ import LabourRateManagement from './components/admin/pages/LabourRateManagement'
 import DriverRateManagement from './components/admin/pages/DriverRateManagement'
 import InventoryCompany from './components/admin/pages/InventoryCompany'
 import AddCustomers from './components/admin/pages/AddCustomers'
+import StartEndKMManagement from './components/admin/pages/StartEndKMManagement'
 
 const App = () => {
   return (
@@ -152,6 +153,7 @@ const App = () => {
         <Route path="/fuel-expense-management" element={<ProtectedRoute><Layout><FuelExpenseManagement /></Layout></ProtectedRoute>} />
         <Route path="/fuel-expenses/view/:id" element={<ProtectedRoute><Layout><ViewFuelExpense /></Layout></ProtectedRoute>} />
         <Route path="/fuel-expenses/edit/:id" element={<ProtectedRoute><Layout><EditFuelExpense /></Layout></ProtectedRoute>} />
+        <Route path="/start-end-km-management" element={<ProtectedRoute><Layout><StartEndKMManagement /></Layout></ProtectedRoute>} />
         <Route path="/excess-km-management" element={<ProtectedRoute><Layout><ExcessKMManagement /></Layout></ProtectedRoute>} />
         <Route path="/excess-km/view/:id" element={<ProtectedRoute><Layout><ViewExcessKM /></Layout></ProtectedRoute>} />
         <Route path="/excess-km/edit/:id" element={<ProtectedRoute><Layout><EditExcessKM /></Layout></ProtectedRoute>} />

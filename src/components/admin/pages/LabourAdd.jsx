@@ -16,7 +16,6 @@ const AddLabour = () => {
     address: '',
     workType: '',
     department: '',
-    dailyWage: '',
     joiningDate: '',
     accountHolderName: '',
     bankName: '',
@@ -65,7 +64,6 @@ const AddLabour = () => {
       formDataToSend.append('address', formData.address);
       formDataToSend.append('work_type', formData.workType);
       formDataToSend.append('department', formData.department);
-      formDataToSend.append('daily_wage', formData.dailyWage);
       formDataToSend.append('joining_date', formData.joiningDate);
       if (formData.accountHolderName) formDataToSend.append('account_holder_name', formData.accountHolderName);
       if (formData.bankName) formDataToSend.append('bank_name', formData.bankName);
@@ -360,27 +358,6 @@ const AddLabour = () => {
                   </div>
                 </div>
 
-              </div>
-
-              {/* Daily Wage */}
-              <div>
-                <label className="block text-sm font-medium text-[#0D5C4D] mb-2">
-                  Daily Wage <span className="text-red-500">*</span>
-                </label>
-                <div className="relative">
-                  <span className="absolute left-4 top-1/2 transform -translate-y-1/2 text-[#6B8782] font-medium">₹</span>
-                  <input
-                    type="number"
-                    name="dailyWage"
-                    value={formData.dailyWage}
-                    onChange={handleInputChange}
-                    placeholder="Enter daily wage"
-                    min="0"
-                    step="1"
-                    className="w-full pl-8 pr-4 py-2.5 bg-white border border-[#D0E0DB] rounded-lg text-[#0D5C4D] placeholder-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#0D8568] focus:border-transparent"
-                    required
-                  />
-                </div>
               </div>
 
               {/* Joining Date */}

@@ -7,6 +7,7 @@ import {
   Download
 } from 'lucide-react';
 import { getAllLabours, deleteLabour, getLabourById } from '../../../api/labourApi';
+import { getAllLabourRates } from '../../../api/labourRateApi';
 import ConfirmDeleteModal from '../../common/ConfirmDeleteModal';
 import { BASE_URL } from '../../../config/config';
 import * as XLSX from 'xlsx-js-style';
@@ -23,6 +24,7 @@ const LabourManagement = () => {
   const dropdownRef = useRef(null);
   const [labours, setLabours] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [labourRates, setLabourRates] = useState({});
   const [deleteModal, setDeleteModal] = useState({ isOpen: false, labourId: null, labourName: '' });
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 7;
@@ -39,8 +41,73 @@ const LabourManagement = () => {
   }, []);
 
   useEffect(() => {
-    fetchLabours();
+    const loadData = async () => {
+      try {
+        setLoading(true);
+        // Fetch both rates and labours in parallel
+        const [ratesResponse, laboursResponse] = await Promise.all([
+          getAllLabourRates().catch(() => []),
+          getAllLabours().catch(() => ({ data: [] }))
+        ]);
+        
+        // Process rates
+        const rates = Array.isArray(ratesResponse) ? ratesResponse : (ratesResponse?.data || []);
+        const ratesMap = {};
+        rates.forEach(rate => {
+          if (rate.status === 'Active') {
+            ratesMap[rate.labourType] = parseFloat(rate.amount) || 0;
+          }
+        });
+        
+        setLabourRates(ratesMap);
+        
+        // Process labours with rates
+        const laboursData = laboursResponse.data || [];
+        const transformedLabours = laboursData.map(labour => {
+          // Get wage from labour rates based on work type
+          const workType = labour.work_type || 'Normal';
+          // Use wage from settings, show 0 if not available
+          const wageFromSettings = ratesMap[workType];
+          const dailyWage = wageFromSettings !== undefined 
+            ? wageFromSettings 
+            : 0;
+          
+          return {
+            id: labour.lid,
+            labourId: labour.labour_id,
+            name: labour.full_name,
+            avatar: labour.full_name.split(' ').map(n => n[0]).join('').toUpperCase(),
+            avatarBg: 'bg-teal-700',
+            profileImage: labour.profile_image,
+            phone: labour.mobile_number,
+            workType: labour.work_type,
+            status: (() => {
+              const s = (labour.status || '').toLowerCase();
+              if (s === 'active' || s === 'present') return 'Present';
+              if (s === 'absent') return 'Absent';
+              return labour.status; // Fallback
+            })(),
+
+            statusColor: (() => {
+              const s = (labour.status || '').toLowerCase();
+              if (s === 'active' || s === 'present') return 'bg-[#10B981]';
+              if (s === 'absent') return 'bg-red-500';
+              return 'bg-orange-500';
+            })(),
+            dailyWage: `₹${dailyWage.toFixed(2)}`,
+            location: labour.city || labour.address || ''
+          };
+        });
+        setLabours(transformedLabours);
+      } catch (error) {
+        console.error('Error loading data:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadData();
   }, []);
+
 
   const toggleDropdown = (labourId, event) => {
     if (openDropdown === labourId) {
@@ -60,31 +127,41 @@ const LabourManagement = () => {
       setLoading(true);
       const response = await getAllLabours();
       const laboursData = response.data || [];
-      const transformedLabours = laboursData.map(labour => ({
-        id: labour.lid,
-        labourId: labour.labour_id,
-        name: labour.full_name,
-        avatar: labour.full_name.split(' ').map(n => n[0]).join('').toUpperCase(),
-        avatarBg: 'bg-teal-700',
-        profileImage: labour.profile_image,
-        phone: labour.mobile_number,
-        workType: labour.work_type,
-        status: (() => {
-          const s = (labour.status || '').toLowerCase();
-          if (s === 'active' || s === 'present') return 'Present';
-          if (s === 'absent') return 'Absent';
-          return labour.status; // Fallback
-        })(),
+      const transformedLabours = laboursData.map(labour => {
+        // Get wage from labour rates based on work type
+        const workType = labour.work_type || 'Normal';
+        // Use wage from settings (labourRates state), show 0 if not available
+        const wageFromSettings = labourRates[workType];
+        const dailyWage = wageFromSettings !== undefined 
+          ? wageFromSettings 
+          : 0;
+        
+        return {
+          id: labour.lid,
+          labourId: labour.labour_id,
+          name: labour.full_name,
+          avatar: labour.full_name.split(' ').map(n => n[0]).join('').toUpperCase(),
+          avatarBg: 'bg-teal-700',
+          profileImage: labour.profile_image,
+          phone: labour.mobile_number,
+          workType: labour.work_type,
+          status: (() => {
+            const s = (labour.status || '').toLowerCase();
+            if (s === 'active' || s === 'present') return 'Present';
+            if (s === 'absent') return 'Absent';
+            return labour.status; // Fallback
+          })(),
 
-        statusColor: (() => {
-          const s = (labour.status || '').toLowerCase();
-          if (s === 'active' || s === 'present') return 'bg-[#10B981]';
-          if (s === 'absent') return 'bg-red-500';
-          return 'bg-orange-500';
-        })(),
-        dailyWage: `₹${labour.daily_wage}`,
-        location: labour.city || labour.address || ''
-      }));
+          statusColor: (() => {
+            const s = (labour.status || '').toLowerCase();
+            if (s === 'active' || s === 'present') return 'bg-[#10B981]';
+            if (s === 'absent') return 'bg-red-500';
+            return 'bg-orange-500';
+          })(),
+          dailyWage: `₹${dailyWage.toFixed(2)}`,
+          location: labour.city || labour.address || ''
+        };
+      });
       setLabours(transformedLabours);
     } catch (error) {
       console.error('Error fetching labours:', error);
@@ -193,7 +270,14 @@ const LabourManagement = () => {
           // Work Details
           'WORK TYPE': labour.work_type || 'N/A',
           'DEPARTMENT': labour.department || 'N/A',
-          'DAILY WAGE': labour.daily_wage ? `₹${labour.daily_wage}` : 'N/A',
+          'DAILY WAGE': (() => {
+            const workType = labour.work_type || 'Normal';
+            const wageFromSettings = labourRates[workType];
+            const dailyWage = wageFromSettings !== undefined 
+              ? wageFromSettings 
+              : 0;
+            return `₹${dailyWage.toFixed(2)}`;
+          })(),
           'JOINING DATE': labour.joining_date || 'N/A',
           'STATUS': labour.status || 'N/A'
         }));
