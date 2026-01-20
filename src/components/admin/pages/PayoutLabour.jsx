@@ -9,7 +9,7 @@ import { getAllLabourExcessPay } from '../../../api/labourExcessPayApi';
 
 const LabourPayoutManagement = () => {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('labour');
+  const [/* activeTab */, setActiveTab] = useState('labour');
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 7;
@@ -22,10 +22,7 @@ const LabourPayoutManagement = () => {
     return `₹${value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
   };
 
-  const cleanForMatching = (name) => {
-    if (!name) return '';
-    return name.replace(/^\d+\s*-\s*/, '').trim();
-  };
+  // (cleanForMatching helper removed – not currently used)
 
   useEffect(() => {
     fetchLabourPayouts();
@@ -167,7 +164,8 @@ const LabourPayoutManagement = () => {
 
   const summaryStats = useMemo(() => {
     const totalPayouts = payouts.length;
-    const totalAmount = payouts.reduce((sum, p) => sum + p.netAmount, 0);
+    // Include excess pay in total wages for this period
+    const totalAmount = payouts.reduce((sum, p) => sum + p.netAmount + (p.advance || 0), 0);
     const averageDailyWage =
       payouts.length > 0
         ? payouts.reduce((sum, p) => sum + p.wageRate, 0) / payouts.length
@@ -312,6 +310,9 @@ const LabourPayoutManagement = () => {
                     Wage Rate
                   </th>
                   <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">
+                    Excess Pay
+                  </th>
+                  <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">
                     Net Amount
                   </th>
                   <th className="px-6 py-4 text-left text-sm font-semibold text-[#0D5C4D]">
@@ -325,13 +326,13 @@ const LabourPayoutManagement = () => {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan="6" className="px-6 py-8 text-center text-[#6B8782]">
+                    <td colSpan="7" className="px-6 py-8 text-center text-[#6B8782]">
                       Loading labour payouts...
                     </td>
                   </tr>
                 ) : paginatedPayouts.length === 0 ? (
                   <tr>
-                    <td colSpan="6" className="px-6 py-8 text-center text-[#6B8782]">
+                    <td colSpan="7" className="px-6 py-8 text-center text-[#6B8782]">
                       No labour payouts found
                     </td>
                   </tr>
@@ -358,17 +359,13 @@ const LabourPayoutManagement = () => {
                         </div>
                       </td>
                       <td className="px-6 py-4">
-                        <div
-                          className={`text-sm font-bold ${
-                            payout.advance === 0 ? 'text-[#0D5C4D]' : 'text-red-600'
-                          }`}
-                        >
-                          {payout.advance === 0 ? '₹0' : `- ${formatCurrency(payout.advance)}`}
+                        <div className="text-sm font-medium text-[#0D5C4D]">
+                          {formatCurrency(payout.advance || 0)}
                         </div>
                       </td>
                       <td className="px-6 py-4">
                         <div className="text-sm font-bold text-[#0D5C4D]">
-                          {formatCurrency(payout.netAmount)}
+                          {formatCurrency(payout.netAmount + (payout.advance || 0))}
                         </div>
                       </td>
                       <td className="px-6 py-4">

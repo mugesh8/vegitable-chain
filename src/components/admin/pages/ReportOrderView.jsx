@@ -4,7 +4,7 @@ import { ArrowLeft, FileText, FileSpreadsheet } from 'lucide-react';
 import { getAllOrders } from '../../../api/orderApi';
 import { getOrderAssignment } from '../../../api/orderAssignmentApi';
 import { getAllDrivers } from '../../../api/driverApi';
-import { getAllInventoryStocks } from '../../../api/inventoryStockApi';
+import { getAllInventory } from '../../../api/inventoryApi';
 import { getAllLabourRates } from '../../../api/labourRateApi';
 import { getAllDriverRates } from '../../../api/driverRateApi';
 import jsPDF from 'jspdf';
@@ -32,6 +32,23 @@ const ReportOrderView = () => {
         let stage3Data = typeof assignment.stage3_data === 'string' ? JSON.parse(assignment.stage3_data) : assignment.stage3_data;
         let deliveryData = stage3Data.products || [];
         const airportGroups = stage3Data.summaryData?.airportGroups || {};
+        const airportTapeData = stage3Data.airportTapeData || {};
+
+        // Prefer tape quantities from backend stage3_summary_data (airportGroups),
+        // fallback to airportTapeData saved in stage3_data if needed.
+        let summaryAirportGroups = airportGroups;
+        if (assignment.stage3_summary_data) {
+            try {
+                const s3Summary = typeof assignment.stage3_summary_data === 'string'
+                    ? JSON.parse(assignment.stage3_summary_data)
+                    : assignment.stage3_summary_data;
+                if (s3Summary && s3Summary.airportGroups) {
+                    summaryAirportGroups = s3Summary.airportGroups;
+                }
+            } catch (e) {
+                console.error('Error parsing stage3_summary_data in processedReportData', e);
+            }
+        }
 
         let stage4ProductRows = [];
         if (assignment.stage4_data) {
@@ -146,7 +163,8 @@ const ReportOrderView = () => {
                     totalWeight: 0,
                     totalBoxes: 0,
                     airportName: '-',
-                    driverInfo: driverInfo
+                    driverInfo: driverInfo,
+                    tapeQuantity: 0
                 };
             }
 
@@ -182,6 +200,31 @@ const ReportOrderView = () => {
             productsByDriver[driverName].totalAmount += productTotal;
             productsByDriver[driverName].totalWeight += grossWeight;
             productsByDriver[driverName].totalBoxes += noOfPkgs;
+        });
+
+        // Attach tape quantity per driver based on airport groups (stage3_summary_data)
+        Object.values(productsByDriver).forEach(driverData => {
+            const airportName = driverData.airportName;
+            let qty = 0;
+
+            // 1) Try to read from stage3_summary_data.airportGroups
+            if (summaryAirportGroups && typeof summaryAirportGroups === 'object') {
+                for (const ag of Object.values(summaryAirportGroups)) {
+                    if (!ag) continue;
+                    if ((ag.airportName || '').toLowerCase() === (airportName || '').toLowerCase()) {
+                        qty = parseFloat(ag.tapeQuantity || ag.tapeQty || 0) || 0;
+                        break;
+                    }
+                }
+            }
+
+            // 2) Fallback to stage3_data.airportTapeData by airport name
+            if (!qty && airportTapeData && typeof airportTapeData === 'object') {
+                const tapeInfo = airportTapeData[airportName] || {};
+                qty = parseFloat(tapeInfo.tapeQuantity || 0) || 0;
+            }
+
+            driverData.tapeQuantity = qty;
         });
 
         return productsByDriver;
@@ -343,8 +386,17 @@ const ReportOrderView = () => {
         finalY += 10;
 
         const getStockPrice = (query) => {
-            const item = stockItems.find(i => (i.product_name || i.item_name || '').toLowerCase().includes(query.toLowerCase()));
-            return item ? parseFloat(item.average_price || item.unit_price || item.price || 0) : 0;
+            const item = stockItems.find(i =>
+                (i.product_name || i.item_name || i.name || '').toLowerCase().includes(query.toLowerCase())
+            );
+            if (!item) return 0;
+            const raw =
+                item.price !== undefined ? item.price :
+                item.average_price !== undefined ? item.average_price :
+                item.unit_price !== undefined ? item.unit_price :
+                0;
+            const num = parseFloat(raw);
+            return isNaN(num) ? 0 : num;
         };
 
         Object.entries(processedReportData).forEach(([driverName, data], index) => {
@@ -396,7 +448,11 @@ const ReportOrderView = () => {
             const labourCost = labourCount * labourRate;
             const labourNamesStr = uniqueLabours.length > 0 ? `(${cleanText(uniqueLabours.join(', '))})` : '';
 
-            const pickupCost = getStockPrice('pickup') || 0; const tapePrice = getStockPrice('tape') || 40; const paperPrice = getStockPrice('paper') || 390; const tapeCost = tapePrice + paperPrice || 430;
+            const pickupCost = getStockPrice('pickup') || 0;
+            const tapeUnitPrice = getStockPrice('tape') || 0;
+            const tapeQuantity = parseFloat(data.tapeQuantity || 0) || 0;
+            const paperPrice = 0;
+            const tapeCost = tapeUnitPrice * tapeQuantity + paperPrice;
             const driverRateObj = driverRates.find(r => r.deliveryType?.toLowerCase().includes('airport') && r.status === 'Active') || driverRates.find(r => r.status === 'Active');
             const driverWage = driverRateObj ? parseFloat(driverRateObj.amount) : 0;
             const totalOverhead = labourCost + pickupCost + tapeCost + driverWage; const totalExpenses = totalBoxCost + totalOverhead;
@@ -579,8 +635,17 @@ const ReportOrderView = () => {
         allRows.push([cell('STAGE 3: DELIVERY ROUTES', 'sectionBlue'), '', '', '', '', '']); merges.push({ s: { r: currentRow, c: 0 }, e: { r: currentRow, c: 5 } }); currentRow++;
 
         const getStockPrice = (query) => {
-            const item = stockItems.find(i => (i.product_name || i.item_name || '').toLowerCase().includes(query.toLowerCase()));
-            return item ? parseFloat(item.average_price || item.unit_price || item.price || 0) : 0;
+            const item = stockItems.find(i =>
+                (i.product_name || i.item_name || i.name || '').toLowerCase().includes(query.toLowerCase())
+            );
+            if (!item) return 0;
+            const raw =
+                item.price !== undefined ? item.price :
+                item.average_price !== undefined ? item.average_price :
+                item.unit_price !== undefined ? item.unit_price :
+                0;
+            const num = parseFloat(raw);
+            return isNaN(num) ? 0 : num;
         };
 
         Object.entries(processedReportData).forEach(([driverName, data], index) => {
@@ -599,7 +664,11 @@ const ReportOrderView = () => {
             const labourRate = normalRateObj ? parseFloat(normalRateObj.amount) : 0; const labourCost = labourCount * labourRate;
             const labourNamesStr = uniqueLabours.length > 0 ? `(${uniqueLabours.join(', ')})` : '';
 
-            const pickupCost = getStockPrice('pickup') || 0; const tapePrice = getStockPrice('tape') || 40; const paperPrice = getStockPrice('paper') || 390; const tapeCost = tapePrice + paperPrice || 430;
+            const pickupCost = getStockPrice('pickup') || 0;
+            const tapeUnitPrice = getStockPrice('tape') || 0;
+            const tapeQuantity = parseFloat(data.tapeQuantity || 0) || 0;
+            const paperPrice = 0;
+            const tapeCost = tapeUnitPrice * tapeQuantity + paperPrice;
             const driverRateObj = driverRates.find(r => r.deliveryType?.toLowerCase().includes('airport') && r.status === 'Active') || driverRates.find(r => r.status === 'Active');
             const driverWage = driverRateObj ? parseFloat(driverRateObj.amount) : 0;
             const totalOverhead = labourCost + pickupCost + tapeCost + driverWage; const totalExpenses = totalBoxCost + totalOverhead;
@@ -667,10 +736,10 @@ const ReportOrderView = () => {
         try {
             setLoading(true);
 
-            // Fetch drivers, stock, labour rates, and driver rates concurrently
+            // Fetch drivers, inventory, labour rates, and driver rates concurrently
             const [driversResponse, stockResponse, ratesResponse, driverRatesResponse] = await Promise.all([
                 getAllDrivers(),
-                getAllInventoryStocks(),
+                getAllInventory(1, 1000),
                 getAllLabourRates(),
                 getAllDriverRates()
             ]);
@@ -679,11 +748,15 @@ const ReportOrderView = () => {
                 setDrivers(driversResponse.data);
             }
 
-            if (stockResponse.success && stockResponse.data) {
-                setStockItems(stockResponse.data);
-            } else if (Array.isArray(stockResponse)) {
-                // Handle case where response is directly the array
-                setStockItems(stockResponse);
+            // Handle inventory response from getAllInventory
+            if (stockResponse) {
+                if (Array.isArray(stockResponse.data)) {
+                    setStockItems(stockResponse.data);
+                } else if (Array.isArray(stockResponse.data?.data)) {
+                    setStockItems(stockResponse.data.data);
+                } else if (Array.isArray(stockResponse)) {
+                    setStockItems(stockResponse);
+                }
             }
 
             if (ratesResponse) {
@@ -1083,8 +1156,6 @@ const ReportOrderView = () => {
                                                 <th className="px-4 py-3 text-left">Product</th>
                                                 <th className="px-4 py-3 text-left">Wastage (kg)</th>
                                                 <th className="px-4 py-3 text-left">Reuse (kg)</th>
-                                                <th className="px-4 py-3 text-left">Tape Type</th>
-                                                <th className="px-4 py-3 text-left">Tape Quantity</th>
                                                 <th className="px-4 py-3 text-left">Labour Assigned</th>
                                             </tr>
                                         </thead>
@@ -1098,8 +1169,6 @@ const ReportOrderView = () => {
                                                         <td className="px-4 py-3">{item.product || item.productName || '-'}</td>
                                                         <td className="px-4 py-3">{parseFloat(item.wastage || 0).toFixed(2)}</td>
                                                         <td className="px-4 py-3">{parseFloat(item.reuse || 0).toFixed(2)}</td>
-                                                        <td className="px-4 py-3">{item.tapeColor || item.tape_color || '-'}</td>
-                                                        <td className="px-4 py-3">{item.tapeQuantity || item.tape_quantity || '-'}</td>
                                                         <td className="px-4 py-3">{item.labourName || item.labourNames || item.labour || '-'}</td>
                                                     </tr>
                                                 ));
@@ -1319,9 +1388,16 @@ const ReportOrderView = () => {
                                             // 1. Calculations & Prep
                                             const getStockPrice = (query) => {
                                                 const item = stockItems.find(i =>
-                                                    (i.product_name || i.item_name || '').toLowerCase().includes(query.toLowerCase())
+                                                    (i.product_name || i.item_name || i.name || '').toLowerCase().includes(query.toLowerCase())
                                                 );
-                                                return item ? parseFloat(item.average_price || item.unit_price || item.price || 0) : 0;
+                                                if (!item) return 0;
+                                                const raw =
+                                                    item.price !== undefined ? item.price :
+                                                    item.average_price !== undefined ? item.average_price :
+                                                    item.unit_price !== undefined ? item.unit_price :
+                                                    0;
+                                                const num = parseFloat(raw);
+                                                return isNaN(num) ? 0 : num;
                                             };
 
                                             // Breakdown of Packaging
@@ -1396,9 +1472,35 @@ const ReportOrderView = () => {
                                             const labourNamesStr = uniqueLabours.length > 0 ? `(${uniqueLabours.join(', ')})` : '';
 
                                             const pickupCost = getStockPrice('pickup') || 0;
-                                            const tapePrice = getStockPrice('tape') || 40;
-                                            const paperPrice = getStockPrice('paper') || 390;
-                                            const tapeCost = tapePrice + paperPrice || 430;
+                                            const tapeUnitPrice = getStockPrice('tape') || 0;
+                                            const tapeQuantity = (() => {
+                                                const airportName = data.airportName;
+
+                                                // 1) Try to read from stage3_summary_data.airportGroups
+                                                if (assignment.stage3_summary_data) {
+                                                    try {
+                                                        const s3Summary = typeof assignment.stage3_summary_data === 'string'
+                                                            ? JSON.parse(assignment.stage3_summary_data)
+                                                            : assignment.stage3_summary_data;
+                                                        const ags = s3Summary?.airportGroups || {};
+                                                        for (const ag of Object.values(ags)) {
+                                                            if (!ag) continue;
+                                                            if ((ag.airportName || '').toLowerCase() === (airportName || '').toLowerCase()) {
+                                                                const q = parseFloat(ag.tapeQuantity || ag.tapeQty || 0) || 0;
+                                                                if (q) return q;
+                                                            }
+                                                        }
+                                                    } catch (e) {
+                                                        console.error('Error parsing stage3_summary_data in HTML view (tapeQuantity)', e);
+                                                    }
+                                                }
+
+                                                // 2) Fallback to stage3_data.airportTapeData by airport name
+                                                const tapeInfo = (stage3Data.airportTapeData || {})[airportName] || {};
+                                                return parseFloat(tapeInfo.tapeQuantity || 0) || 0;
+                                            })();
+                                            const paperPrice = 0;
+                                            const tapeCost = tapeUnitPrice * tapeQuantity + paperPrice;
 
                                             // Dynamic Driver Wage (Relaxed Match)
                                             const driverRateObj = driverRates.find(r => r.deliveryType?.toLowerCase().includes('airport') && r.status === 'Active')

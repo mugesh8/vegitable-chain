@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Download } from 'lucide-react';
 import { getAllLabours } from '../../../api/labourApi';
 import { getAllAttendance } from '../../../api/labourAttendanceApi';
 import { getAllLabourRates } from '../../../api/labourRateApi';
 import { getAllLabourExcessPay } from '../../../api/labourExcessPayApi';
 import { getAllOrders } from '../../../api/orderApi';
 import { getOrderAssignment } from '../../../api/orderAssignmentApi';
+import * as XLSX from 'xlsx-js-style';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
 
 const ReportLabour = () => {
   const navigate = useNavigate();
@@ -319,6 +322,119 @@ const ReportLabour = () => {
     }
   ];
 
+  const cleanCurrency = (value) => {
+    if (value === null || value === undefined) return '';
+    let s = String(value);
+    s = s.replace(/₹/g, 'Rs. ');
+    // Replace any non-ASCII characters to avoid PDF font issues
+    return s
+      .split('')
+      .map((ch) => (ch.charCodeAt(0) <= 127 ? ch : ''))
+      .join('')
+      .trim();
+  };
+
+  const handleExportExcel = () => {
+    if (!labours || labours.length === 0) {
+      alert('No labour data to export');
+      return;
+    }
+
+    const exportData = labours.map((labour) => ({
+      'LABOUR ID': labour.id,
+      'NAME': labour.name,
+      'TOTAL WAGES': cleanCurrency(labour.wages),
+      'PAID': cleanCurrency(labour.paid),
+      'DUES': cleanCurrency(labour.dues),
+      'STATUS': labour.status
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(exportData);
+    worksheet['!cols'] = [
+      { wch: 14 },
+      { wch: 25 },
+      { wch: 18 },
+      { wch: 18 },
+      { wch: 18 },
+      { wch: 12 }
+    ];
+
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Labour Report');
+    XLSX.writeFile(workbook, `labour_report_${new Date().toISOString().split('T')[0]}.xlsx`);
+  };
+
+  const handleExportPDF = () => {
+    if (!labours || labours.length === 0) {
+      alert('No labour data to export');
+      return;
+    }
+
+    const doc = new jsPDF();
+
+    // Header bar
+    doc.setFillColor(13, 92, 77);
+    doc.rect(0, 0, 210, 40, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(22);
+    doc.setFont(undefined, 'bold');
+    doc.text('LABOUR WAGES REPORT', 105, 20, { align: 'center' });
+
+    // Subheader with date and summary info
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'normal');
+    const generatedOn = new Date().toLocaleDateString('en-GB');
+    const subText = `Generated on: ${generatedOn}  |  Total Labour: ${stats.totalLabour}  |  Present Today: ${stats.presentToday}`;
+    doc.text(subText, 105, 30, { align: 'center' });
+
+    // Table body
+    const tableBody = labours.map((labour) => [
+      labour.id,
+      labour.name,
+      cleanCurrency(labour.wages),
+      cleanCurrency(labour.paid),
+      cleanCurrency(labour.dues),
+      labour.status
+    ]);
+
+    doc.autoTable({
+      startY: 50,
+      head: [['Labour ID', 'Name', 'Total Wages', 'Paid', 'Dues', 'Status']],
+      body: tableBody,
+      theme: 'grid',
+      headStyles: {
+        fillColor: [13, 92, 77],
+        textColor: 255,
+        fontStyle: 'bold',
+        halign: 'center'
+      },
+      bodyStyles: { fontSize: 9, cellPadding: 3, halign: 'center' },
+      alternateRowStyles: { fillColor: [240, 253, 244] },
+      columnStyles: {
+        0: { halign: 'center' },
+        1: { halign: 'left' },
+        2: { halign: 'right' },
+        3: { halign: 'right' },
+        4: { halign: 'right' },
+        5: { halign: 'center' }
+      }
+    });
+
+    // Summary card at bottom
+    const finalY = doc.lastAutoTable.finalY + 10;
+    doc.setFillColor(236, 253, 245);
+    doc.rect(14, finalY, 182, 24, 'F');
+
+    doc.setTextColor(13, 92, 77);
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'bold');
+    doc.text(`Total Wages: ${cleanCurrency(formatCurrency(stats.totalWages))}`, 20, finalY + 8);
+    doc.text(`Pending Wages: ${cleanCurrency(formatCurrency(stats.pendingWages))}`, 20, finalY + 16);
+    doc.text(`Pending Labour Count: ${stats.pendingCount}`, 120, finalY + 8);
+
+    doc.save(`labour_report_${new Date().toISOString().split('T')[0]}.pdf`);
+  };
+
   if (loading) {
     return (
       <div className="p-4 sm:p-6 lg:p-8">
@@ -334,10 +450,32 @@ const ReportLabour = () => {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8">
-      <button onClick={() => navigate('/reports')} className="flex items-center gap-2 text-[#0D5C4D] hover:text-[#0a6354] mb-6">
-        <ArrowLeft size={20} />
-        <span className="font-medium">Back to Reports</span>
-      </button>
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+        <button
+          onClick={() => navigate('/reports')}
+          className="flex items-center gap-2 text-[#0D5C4D] hover:text-[#0a6354]"
+        >
+          <ArrowLeft size={20} />
+          <span className="font-medium">Back to Reports</span>
+        </button>
+
+        <div className="flex gap-3">
+          <button
+            onClick={handleExportExcel}
+            className="bg-[#1DB890] hover:bg-[#19a57e] text-white px-4 sm:px-6 py-2.5 rounded-lg font-medium text-sm flex items-center gap-2 transition-colors shadow-sm"
+          >
+            <Download className="w-4 h-4" />
+            Export Excel
+          </button>
+          <button
+            onClick={handleExportPDF}
+            className="bg-[#EF4444] hover:bg-[#DC2626] text-white px-4 sm:px-6 py-2.5 rounded-lg font-medium text-sm flex items-center gap-2 transition-colors shadow-sm"
+          >
+            <Download className="w-4 h-4" />
+            Export PDF
+          </button>
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         {displayStats.map((stat, index) => (

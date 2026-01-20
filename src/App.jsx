@@ -56,6 +56,8 @@ import DailyPayout from './components/admin/pages/DailyPayout'
 import PayoutManagement from './components/admin/pages/PayoutManagement'
 import PayoutLabour from './components/admin/pages/PayoutLabour'
 import PayoutDriver from './components/admin/pages/PayoutDriver'
+import PayoutSupplier from './components/admin/pages/PayoutSupplier'
+import PayoutThirdParty from './components/admin/pages/PayoutThirdParty'
 import RolesPermissionSystem from './components/admin/pages/RolesAndPermissionsManagements'
 import LabourManagement from './components/admin/pages/LabourManagement'
 import LabourAdd from './components/admin/pages/LabourAdd'
@@ -192,6 +194,8 @@ const App = () => {
         <Route path="/stock" element={<ProtectedRoute><Layout><StockManagement /></Layout></ProtectedRoute>} />
         <Route path="/stock/:id" element={<ProtectedRoute><Layout><StockReassignmentForm /></Layout></ProtectedRoute>} />
         <Route path="/payouts" element={<ProtectedRoute><Layout><PayoutManagement /></Layout></ProtectedRoute>} />
+        <Route path="/payout-supplier" element={<ProtectedRoute><Layout><PayoutSupplier /></Layout></ProtectedRoute>} />
+        <Route path="/payout-thirdparty" element={<ProtectedRoute><Layout><PayoutThirdParty /></Layout></ProtectedRoute>} />
         <Route path="/payout-labour" element={<ProtectedRoute><Layout><PayoutLabour /></Layout></ProtectedRoute>} />
         <Route path="/payout-driver" element={<ProtectedRoute><Layout><PayoutDriver /></Layout></ProtectedRoute>} />
         <Route path="/reports" element={<ProtectedRoute><Layout><ReportManagement /></Layout></ProtectedRoute>} />
